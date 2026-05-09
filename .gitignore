@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.DS_Store
+data/posters/*
+data/charts/*
+.env
+chromedriver.exe
