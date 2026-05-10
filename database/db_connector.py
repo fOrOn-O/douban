@@ -1,5 +1,9 @@
-import pymysql
-from pymysql.cursors import DictCursor
+try:
+    import pymysql
+    from pymysql.cursors import DictCursor
+except ImportError:
+    pymysql = None
+    DictCursor = None
 from config import DB_CONFIG
 from utils.logger import logger
 
@@ -10,6 +14,8 @@ class DBConnector:
     
     def connect(self):
         try:
+            if pymysql is None:
+                raise RuntimeError("缺少pymysql依赖，请先执行 pip install -r requirements.txt")
             self.connection = pymysql.connect(
                 **DB_CONFIG,
                 cursorclass=DictCursor,

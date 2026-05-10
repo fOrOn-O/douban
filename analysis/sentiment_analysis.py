@@ -2,6 +2,8 @@ import jieba
 from snownlp import SnowNLP
 import pandas as pd
 from tqdm import tqdm
+import os
+from config import BASE_DIR
 from utils.logger import logger
 
 class SentimentAnalyzer:
@@ -13,7 +15,8 @@ class SentimentAnalyzer:
     def _load_stopwords(self):
         stopwords = set()
         try:
-            with open('utils/stopwords.txt', 'r', encoding='utf-8') as f:
+            stopwords_path = os.path.join(BASE_DIR, 'utils', 'stopwords.txt')
+            with open(stopwords_path, 'r', encoding='utf-8') as f:
                 for line in f:
                     stopwords.add(line.strip())
         except:
@@ -36,6 +39,20 @@ class SentimentAnalyzer:
     
     def run(self):
         logger.info("开始进行短评情感分析")
+        if self.comments_df.empty:
+            self.comments_df['sentiment'] = []
+            sentiment_stats = {
+                'positive': 0,
+                'positive_ratio': 0,
+                'neutral': 0,
+                'neutral_ratio': 0,
+                'negative': 0,
+                'negative_ratio': 0
+            }
+            logger.info("情感分析完成: 无评论数据")
+            return self.comments_df, sentiment_stats
+        
+        self.comments_df['content'] = self.comments_df['content'].fillna('').astype(str)
         
         tqdm.pandas(desc="情感分析")
         self.comments_df['sentiment'] = self.comments_df['content'].progress_apply(self.analyze_sentiment)

@@ -7,12 +7,20 @@ from utils.logger import logger
 
 class MySQLPipeline:
     def open_spider(self, spider):
-        self.db = DBConnector()
+        self.db = None
+        try:
+            self.db = DBConnector()
+        except Exception as e:
+            logger.warning(f"MySQL不可用，跳过数据库存储: {e}")
     
     def close_spider(self, spider):
-        self.db.close()
+        if self.db:
+            self.db.close()
     
     def process_item(self, item, spider):
+        if not self.db:
+            return item
+        
         if item.__class__.__name__ == 'MovieItem':
             try:
                 self.db.insert_movie(dict(item))
@@ -53,13 +61,13 @@ class JsonPipeline:
         if item.__class__.__name__ == 'MovieItem':
             if not self.first_movie:
                 self.movies_file.write(',\n')
-            json.dump(dict(item), self.movies_file, ensure_ascii=False, indent=2)
+            json.dump(dict(item), self.movies_file, ensure_ascii=False, indent=2, default=str)
             self.first_movie = False
         
         elif item.__class__.__name__ == 'CommentItem':
             if not self.first_comment:
                 self.comments_file.write(',\n')
-            json.dump(dict(item), self.comments_file, ensure_ascii=False, indent=2)
+            json.dump(dict(item), self.comments_file, ensure_ascii=False, indent=2, default=str)
             self.first_comment = False
         
         return item

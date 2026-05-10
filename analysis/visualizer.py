@@ -6,6 +6,7 @@ from wordcloud import WordCloud
 import jieba
 from config import BASE_DIR
 import os
+from matplotlib import font_manager
 from utils.logger import logger
 
 # 设置中文字体
@@ -20,6 +21,22 @@ class DataVisualizer:
         self.sentiment_stats = sentiment_stats
         self.output_dir = os.path.join(BASE_DIR, 'data', 'charts')
         os.makedirs(self.output_dir, exist_ok=True)
+    
+    def get_wordcloud_font_path(self):
+        candidates = [
+            os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'simhei.ttf'),
+            os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'msyh.ttc'),
+            '/System/Library/Fonts/PingFang.ttc',
+            '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc'
+        ]
+        for font_path in candidates:
+            if os.path.exists(font_path):
+                return font_path
+        for font_path in font_manager.findSystemFonts():
+            lower_path = font_path.lower()
+            if any(name in lower_path for name in ['simhei', 'msyh', 'pingfang', 'wqy', 'noto']):
+                return font_path
+        return None
     
     def plot_rating_distribution(self):
         """评分分布直方图"""
@@ -60,9 +77,11 @@ class DataVisualizer:
         sns.scatterplot(data=self.movies_df, x='rating', y='rating_count', alpha=0.6, s=100)
         
         # 添加趋势线
-        z = np.polyfit(self.movies_df['rating'], self.movies_df['rating_count'], 1)
-        p = np.poly1d(z)
-        plt.plot(self.movies_df['rating'], p(self.movies_df['rating']), "r--", alpha=0.8)
+        valid_df = self.movies_df[['rating', 'rating_count']].dropna()
+        if len(valid_df) >= 2 and valid_df['rating'].nunique() >= 2:
+            z = np.polyfit(valid_df['rating'], valid_df['rating_count'], 1)
+            p = np.poly1d(z)
+            plt.plot(valid_df['rating'], p(valid_df['rating']), "r--", alpha=0.8)
         
         correlation = self.analysis_results['rating_reviews_correlation']
         plt.title(f'评分与评价人数关系 (相关系数: {correlation:.3f})', fontsize=16)
@@ -77,6 +96,7 @@ class DataVisualizer:
     def plot_year_trend(self):
         """上映年份趋势线图"""
         year_counts = self.analysis_results['year_distribution']
+        year_counts = year_counts[year_counts.index > 0]
         
         plt.figure(figsize=(15, 8))
         sns.lineplot(x=year_counts.index, y=year_counts.values, marker='o', linewidth=2.5)
@@ -98,6 +118,8 @@ class DataVisualizer:
             self.sentiment_stats['neutral_ratio'],
             self.sentiment_stats['negative_ratio']
         ]
+        if sum(sizes) == 0:
+            sizes = [0, 1, 0]
         colors = ['#66b3ff', '#99ff99', '#ff9999']
         
         plt.figure(figsize=(10, 8))
@@ -124,17 +146,22 @@ class DataVisualizer:
         words = jieba.cut(all_comments)
         words = [word for word in words if len(word) > 1 and word not in ['电影', '这部', '一个', '没有', '还是', '就是', '但是', '可以', '非常', '真的']]
         text = ' '.join(words)
+        if not text.strip():
+            text = '暂无评论 数据分析 电影 评分 可视化'
         
         # 生成词云
-        wc = WordCloud(
-            font_path='C:/Windows/Fonts/simhei.ttf',
+        wc_kwargs = dict(
+            font_path=self.get_wordcloud_font_path(),
             width=1200,
             height=800,
             background_color='white',
             max_words=200,
             max_font_size=150,
             random_state=42
-        ).generate(text)
+        )
+        if not wc_kwargs['font_path']:
+            wc_kwargs.pop('font_path')
+        wc = WordCloud(**wc_kwargs).generate(text)
         
         plt.figure(figsize=(15, 10))
         plt.imshow(wc, interpolation='bilinear')

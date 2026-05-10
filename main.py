@@ -1,14 +1,32 @@
 import time
 import os
+import sys
+import subprocess
+import argparse
+import pandas as pd
 from utils.logger import logger
 from database.db_connector import DBConnector
-from requests_version.basic_spider import BasicMovieSpider
-from requests_version.detail_spider import DetailSpider
-from requests_version.image_downloader import PosterDownloader
 from analysis.data_cleaner import DataCleaner
 from analysis.analyzer import DataAnalyzer
 from analysis.sentiment_analysis import SentimentAnalyzer
 from analysis.visualizer import DataVisualizer
+from config import BASE_DIR, CSV_DIR
+
+def save_spider_data_to_csv(movies, comments, source='requests'):
+    movie_columns = [
+        'rank', 'title_cn', 'title_en', 'rating', 'rating_count', 'director',
+        'actors', 'summary', 'detail_url', 'release_year', 'duration', 'genres',
+        'imdb_rating', 'poster_path'
+    ]
+    comment_columns = ['movie_url', 'reviewer', 'rating', 'content', 'comment_time', 'sentiment']
+    movies_path = os.path.join(CSV_DIR, f'movies_{source}.csv')
+    comments_path = os.path.join(CSV_DIR, f'comments_{source}.csv')
+    
+    movies_df = pd.DataFrame(movies).reindex(columns=movie_columns)
+    comments_df = pd.DataFrame(comments).reindex(columns=comment_columns)
+    movies_df.to_csv(movies_path, index=False, encoding='utf-8-sig')
+    comments_df.to_csv(comments_path, index=False, encoding='utf-8-sig')
+    logger.info(f"爬虫数据已保存到CSV: {movies_path} 和 {comments_path}")
 
 def run_requests_spider():
     logger.info("="*50)
@@ -16,6 +34,7 @@ def run_requests_spider():
     logger.info("="*50)
     
     start_time = time.time()
+    driver = None
     
     try:
         # 1. 初始化浏览器（只启动一次，共用）
@@ -39,30 +58,37 @@ def run_requests_spider():
         for movie in detailed_movies:
             movie['poster_path'] = None
         
+        save_spider_data_to_csv(detailed_movies, comments)
+        
         # 5. 保存到数据库
-        db = DBConnector()
-        logger.info("开始保存数据到数据库")
-        
-        for movie in detailed_movies:
-            try:
-                db.insert_movie(movie)
-                movie_id = db.get_movie_id_by_url(movie['detail_url'])
-                
-                # 保存该电影的评论
-                movie_comments = [c for c in comments if c['movie_url'] == movie['detail_url']]
-                for comment in movie_comments:
-                    if movie_id:
-                        comment['movie_id'] = movie_id
-                        del comment['movie_url']
-                        db.insert_comment(comment)
-            except Exception as e:
-                logger.error(f"保存电影数据失败: {movie.get('title_cn', '未知')}, 错误: {e}")
-                continue
-        
-        db.close()
+        try:
+            db = DBConnector()
+            logger.info("开始保存数据到数据库")
+            
+            for movie in detailed_movies:
+                try:
+                    db.insert_movie(movie)
+                    movie_id = db.get_movie_id_by_url(movie['detail_url'])
+                    
+                    # 保存该电影的评论
+                    movie_comments = [c for c in comments if c['movie_url'] == movie['detail_url']]
+                    for comment in movie_comments:
+                        if movie_id:
+                            comment_data = comment.copy()
+                            comment_data['movie_id'] = movie_id
+                            del comment_data['movie_url']
+                            db.insert_comment(comment_data)
+                except Exception as e:
+                    logger.error(f"保存电影数据失败: {movie.get('title_cn', '未知')}, 错误: {e}")
+                    continue
+            
+            db.close()
+        except Exception as e:
+            logger.warning(f"数据库保存失败，已保留CSV文件用于后续分析: {e}")
         
         # 6. 关闭浏览器
-        driver.quit()
+        if driver:
+            driver.quit()
         
         end_time = time.time()
         logger.info(f"全Selenium版本爬虫运行完成，总耗时: {end_time - start_time:.2f}秒")
@@ -70,7 +96,8 @@ def run_requests_spider():
     except Exception as e:
         logger.error(f"爬虫运行异常: {e}")
         try:
-            driver.quit()
+            if driver:
+                driver.quit()
         except:
             pass
 
@@ -82,9 +109,8 @@ def run_scrapy_spider():
     start_time = time.time()
     
     # 切换到scrapy目录并运行爬虫
-    os.chdir('D:\Python爬虫\project2.0\douban_movie_analyzer\scrapy_version')
-    os.system('scrapy crawl douban_movie')
-    os.chdir('..')
+    scrapy_dir = os.path.join(BASE_DIR, 'scrapy_version')
+    subprocess.run([sys.executable, '-m', 'scrapy', 'crawl', 'douban_movie'], cwd=scrapy_dir, check=True)
     
     end_time = time.time()
     logger.info(f"Scrapy版本爬虫运行完成，总耗时: {end_time - start_time:.2f}秒")
@@ -130,6 +156,27 @@ def run_analysis_and_visualization():
     print(f"负面评论: {sentiment_stats['negative']} ({sentiment_stats['negative_ratio']:.1%})")
 
 def main():
+    parser = argparse.ArgumentParser(description='豆瓣电影Top250爬虫与数据分析系统')
+    parser.add_argument('--requests', action='store_true', help='运行全Selenium版本爬虫')
+    parser.add_argument('--scrapy', action='store_true', help='运行Scrapy版本爬虫')
+    parser.add_argument('--analysis', action='store_true', help='运行数据分析和可视化')
+    parser.add_argument('--all', action='store_true', help='运行全Selenium爬虫和数据分析')
+    args = parser.parse_args()
+    
+    if args.requests:
+        run_requests_spider()
+        return
+    if args.scrapy:
+        run_scrapy_spider()
+        return
+    if args.analysis:
+        run_analysis_and_visualization()
+        return
+    if args.all:
+        run_requests_spider()
+        run_analysis_and_visualization()
+        return
+    
     print("豆瓣电影Top250爬虫与数据分析系统")
     print("="*50)
     print("请选择要运行的模块:")

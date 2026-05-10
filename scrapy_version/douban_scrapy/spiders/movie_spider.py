@@ -2,7 +2,7 @@ import sys
 import os
 # 【新增】添加项目根目录到搜索路径
 current_file_path = os.path.abspath(__file__)
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file_path)))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file_path))))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -121,7 +121,7 @@ class DoubanMovieSpider(scrapy.Spider):
             next_url = next_page['href']
             full_next_url = response.urljoin(next_url)
             yield scrapy.Request(
-                url=next_url, 
+                url=full_next_url, 
                 callback=self.parse,
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
@@ -201,8 +201,11 @@ class DoubanMovieSpider(scrapy.Spider):
                 
                 time_span = item.find('span', class_='comment-time')
                 if time_span:
-                    time_str = time_span['title']
-                    comment['comment_time'] = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
+                    time_str = time_span['title'] if 'title' in time_span.attrs else time_span.text.strip()
+                    try:
+                        comment['comment_time'] = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
+                    except:
+                        comment['comment_time'] = None
                 else:
                     comment['comment_time'] = None
                 
