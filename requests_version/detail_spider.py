@@ -9,9 +9,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from utils.logger import logger
 from config import REQUEST_DELAY_MIN, REQUEST_DELAY_MAX
+from .anti_crawl import AntiCrawlStrategy
 
-class DetailSpider:
+class DetailSpider(AntiCrawlStrategy):
     def __init__(self, driver):
+        super().__init__()
         self.driver = driver
     
     def random_delay(self):
@@ -67,7 +69,9 @@ class DetailSpider:
                         break
                     
                     comment = {}
-                    comment['reviewer'] = item.find('span', class_='comment-info').a.text.strip()
+                    reviewer_span = item.find('span', class_='comment-info')
+                    reviewer_link = reviewer_span.a if reviewer_span else None
+                    comment['reviewer'] = reviewer_link.text.strip() if reviewer_link else ''
                     
                     # 评分
                     rating_span = item.find('span', class_=re.compile(r'rating'))
@@ -79,7 +83,8 @@ class DetailSpider:
                         comment['rating'] = None
                     
                     # 评论内容
-                    comment['content'] = item.find('span', class_='short').text.strip()
+                    content_span = item.find('span', class_='short')
+                    comment['content'] = content_span.text.strip() if content_span else ''
                     
                     # 评论时间
                     time_span = item.find('span', class_='comment-time')

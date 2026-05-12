@@ -33,8 +33,12 @@ class DataCleaner:
             os.path.join(CSV_DIR, 'comments_cleaned.csv')
         ]
         
-        movies_path = next((path for path in movie_candidates if os.path.exists(path) and os.path.getsize(path) > 0), None)
-        comments_path = next((path for path in comment_candidates if os.path.exists(path) and os.path.getsize(path) > 0), None)
+        def select_latest_existing_file(candidates):
+            existing_files = [path for path in candidates if os.path.exists(path) and os.path.getsize(path) > 0]
+            return max(existing_files, key=os.path.getmtime) if existing_files else None
+        
+        movies_path = select_latest_existing_file(movie_candidates)
+        comments_path = select_latest_existing_file(comment_candidates)
         
         if not movies_path:
             raise FileNotFoundError("未找到可用的电影CSV数据文件")
@@ -128,6 +132,7 @@ class DataCleaner:
         df['rating'] = pd.to_numeric(df['rating'], errors='coerce').fillna(0)
         df['content'] = df['content'].fillna('').astype(str)
         df['comment_time'] = pd.to_datetime(df['comment_time'], errors='coerce')
+        df['sentiment'] = pd.to_numeric(df['sentiment'], errors='coerce')
         
         # 去除空评论
         df = df[df['content'].str.strip() != '']

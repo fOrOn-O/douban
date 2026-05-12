@@ -53,9 +53,18 @@ class SentimentAnalyzer:
             return self.comments_df, sentiment_stats
         
         self.comments_df['content'] = self.comments_df['content'].fillna('').astype(str)
+        if 'sentiment' not in self.comments_df.columns:
+            self.comments_df['sentiment'] = pd.NA
+        self.comments_df['sentiment'] = pd.to_numeric(self.comments_df['sentiment'], errors='coerce')
         
-        tqdm.pandas(desc="情感分析")
-        self.comments_df['sentiment'] = self.comments_df['content'].progress_apply(self.analyze_sentiment)
+        missing_sentiment = self.comments_df['sentiment'].isna()
+        if missing_sentiment.any():
+            tqdm.pandas(desc="情感分析")
+            self.comments_df.loc[missing_sentiment, 'sentiment'] = (
+                self.comments_df.loc[missing_sentiment, 'content'].progress_apply(self.analyze_sentiment)
+            )
+        else:
+            logger.info("检测到已有情感分析结果，跳过重复计算")
         
         # 统计情感分布
         positive = len(self.comments_df[self.comments_df['sentiment'] > 0.6])

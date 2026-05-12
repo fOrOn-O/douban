@@ -8,7 +8,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from utils.logger import logger
-from config import REQUEST_DELAY_MIN, REQUEST_DELAY_MAX
+from config import REQUEST_DELAY_MIN, REQUEST_DELAY_MAX, HEADLESS_MODE
+from utils.user_agents import get_random_user_agent
 
 class BasicMovieSpider:
     def __init__(self, driver=None):
@@ -18,8 +19,8 @@ class BasicMovieSpider:
     def _init_driver(self):
         chrome_options = Options()
         # 无头模式（后台运行，不显示浏览器窗口）
-        # 如果想看浏览器操作，可以注释掉下面这行
-        chrome_options.add_argument('--headless=new')
+        if HEADLESS_MODE:
+            chrome_options.add_argument('--headless=new')
         
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
@@ -31,10 +32,8 @@ class BasicMovieSpider:
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        # 真实User-Agent
-        chrome_options.add_argument(
-            'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
-        )
+        # 随机User-Agent
+        chrome_options.add_argument(f'user-agent={get_random_user_agent()}')
         
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
@@ -97,7 +96,8 @@ class BasicMovieSpider:
                 movie['actors'] = actors_match.group(1).strip() if actors_match else ''
                 
                 # 简介
-                summary_span = item.find('p', class_='quote')
+                quote_p = item.find('p', class_='quote')
+                summary_span = quote_p.find('span') if quote_p else item.find('span', class_='inq')
                 movie['summary'] = summary_span.text.strip() if summary_span else ''
                 
                 # 详情链接

@@ -28,7 +28,7 @@ def save_spider_data_to_csv(movies, comments, source='requests'):
     comments_df.to_csv(comments_path, index=False, encoding='utf-8-sig')
     logger.info(f"爬虫数据已保存到CSV: {movies_path} 和 {comments_path}")
 
-def run_requests_spider():
+def run_requests_spider(download_posters=False):
     logger.info("="*50)
     logger.info("开始运行全Selenium版本爬虫")
     logger.info("="*50)
@@ -54,9 +54,10 @@ def run_requests_spider():
         detail_spider = DetailSpider(driver)
         detailed_movies, comments = detail_spider.crawl_movie_details(movies)
         
-        # 4. 跳过海报下载（为了快速完成）
-        for movie in detailed_movies:
-            movie['poster_path'] = None
+        # 4. 下载或跳过海报
+        from requests_version.image_downloader import PosterDownloader
+        poster_downloader = PosterDownloader(driver)
+        detailed_movies = poster_downloader.download_all_posters(detailed_movies, download=download_posters)
         
         save_spider_data_to_csv(detailed_movies, comments)
         
@@ -133,6 +134,7 @@ def run_analysis_and_visualization():
     # 3. 情感分析
     sentiment_analyzer = SentimentAnalyzer(comments_df)
     comments_with_sentiment, sentiment_stats = sentiment_analyzer.run()
+    cleaner.save_cleaned_data(movies_df, comments_with_sentiment)
     
     # 4. 可视化
     visualizer = DataVisualizer(movies_df, comments_with_sentiment, analysis_results, sentiment_stats)
@@ -161,10 +163,11 @@ def main():
     parser.add_argument('--scrapy', action='store_true', help='运行Scrapy版本爬虫')
     parser.add_argument('--analysis', action='store_true', help='运行数据分析和可视化')
     parser.add_argument('--all', action='store_true', help='运行全Selenium爬虫和数据分析')
+    parser.add_argument('--download-posters', action='store_true', help='运行requests爬虫时下载海报')
     args = parser.parse_args()
     
     if args.requests:
-        run_requests_spider()
+        run_requests_spider(download_posters=args.download_posters)
         return
     if args.scrapy:
         run_scrapy_spider()
@@ -173,7 +176,7 @@ def main():
         run_analysis_and_visualization()
         return
     if args.all:
-        run_requests_spider()
+        run_requests_spider(download_posters=args.download_posters)
         run_analysis_and_visualization()
         return
     
