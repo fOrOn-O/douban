@@ -1,6 +1,7 @@
 import time
 import random
 import requests
+from urllib.robotparser import RobotFileParser
 from config import REQUEST_DELAY_MIN, REQUEST_DELAY_MAX, MAX_RETRIES, TIMEOUT
 from utils.user_agents import get_random_user_agent
 from utils.logger import logger
@@ -8,7 +9,20 @@ from utils.logger import logger
 class AntiCrawlStrategy:
     def __init__(self):
         self.session = requests.Session()
+        self.proxy_pool = self.load_proxy_pool()
+        self.proxy_failures = {}
         self.update_headers()
+    
+    def load_proxy_pool(self):
+        proxy_file = 'proxies.txt'
+        try:
+            with open(proxy_file, 'r', encoding='utf-8') as f:
+                proxies = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
+            logger.info(f"已加载{len(proxies)}个代理IP")
+            return proxies
+        except FileNotFoundError:
+            logger.info("未发现proxies.txt，使用直连模式")
+            return []
     
     def update_headers(self):
         self.session.headers.update({
@@ -24,23 +38,57 @@ class AntiCrawlStrategy:
         delay = random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX)
         time.sleep(delay)
     
+    def get_random_proxy(self):
+        available_proxies = [proxy for proxy in self.proxy_pool if self.proxy_failures.get(proxy, 0) < 3]
+        if not available_proxies:
+            return None
+        proxy = random.choice(available_proxies)
+        return {
+            'http': proxy,
+            'https': proxy
+        }
+    
+    def record_proxy_failure(self, proxies):
+        if not proxies:
+            return
+        proxy = proxies.get('http')
+        if proxy:
+            self.proxy_failures[proxy] = self.proxy_failures.get(proxy, 0) + 1
+    
+    def check_robots_txt(self, base_url='https://movie.douban.com/', path='/top250'):
+        robots_url = f"{base_url.rstrip('/')}/robots.txt"
+        try:
+            parser = RobotFileParser()
+            parser.set_url(robots_url)
+            parser.read()
+            can_fetch = parser.can_fetch(self.session.headers.get('User-Agent', '*'), path)
+            logger.info(f"Robots.txt检查: {robots_url} path={path} allowed={can_fetch}")
+            return can_fetch
+        except Exception as e:
+            logger.warning(f"Robots.txt检查失败: {e}")
+            return None
+    
     def get_with_retry(self, url):
         for attempt in range(MAX_RETRIES):
+            proxies = self.get_random_proxy()
             try:
                 self.random_delay()
-                response = self.session.get(url, timeout=TIMEOUT)
+                response = self.session.get(url, timeout=TIMEOUT, proxies=proxies)
                 
                 if response.status_code == 200:
                     return response
                 elif response.status_code in [403, 429]:
                     logger.warning(f"遇到反爬限制，状态码: {response.status_code}，等待后重试")
+                    self.record_proxy_failure(proxies)
                     time.sleep(10 * (attempt + 1))
                     self.update_headers()
                 else:
                     logger.warning(f"请求失败，状态码: {response.status_code}")
+                    self.record_proxy_failure(proxies)
                     
             except Exception as e:
                 logger.error(f"请求异常: {e}，尝试次数: {attempt + 1}")
+                self.record_proxy_failure(proxies)
                 time.sleep(5)
         
         logger.error(f"请求失败，已达到最大重试次数: {url}")

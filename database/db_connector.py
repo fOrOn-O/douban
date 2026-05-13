@@ -67,11 +67,11 @@ class DBConnector:
         poster_path=VALUES(poster_path)
         """
         return self.execute_update(sql, (
-            movie_data['rank'], movie_data['title_cn'], movie_data['title_en'],
-            movie_data['rating'], movie_data['rating_count'], movie_data['director'],
-            movie_data['actors'], movie_data['summary'], movie_data['detail_url'],
-            movie_data['release_year'], movie_data['duration'], movie_data['genres'],
-            movie_data['imdb_rating'], movie_data['poster_path']
+            movie_data.get('rank', 0), movie_data.get('title_cn', ''), movie_data.get('title_en', ''),
+            movie_data.get('rating', 0), movie_data.get('rating_count', 0), movie_data.get('director', ''),
+            movie_data.get('actors', ''), movie_data.get('summary', ''), movie_data.get('detail_url', ''),
+            movie_data.get('release_year'), movie_data.get('duration', ''), movie_data.get('genres', ''),
+            movie_data.get('imdb_rating'), movie_data.get('poster_path')
         ))
     
     def insert_comment(self, comment_data):
@@ -80,9 +80,9 @@ class DBConnector:
         VALUES (%s, %s, %s, %s, %s, %s)
         """
         return self.execute_update(sql, (
-            comment_data['movie_id'], comment_data['reviewer'],
-            comment_data['rating'], comment_data['content'],
-            comment_data['comment_time'], comment_data.get('sentiment')
+            comment_data.get('movie_id'), comment_data.get('reviewer', ''),
+            comment_data.get('rating'), comment_data.get('content', ''),
+            comment_data.get('comment_time'), comment_data.get('sentiment')
         ))
     
     def get_movie_id_by_url(self, detail_url):

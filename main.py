@@ -30,17 +30,16 @@ def save_spider_data_to_csv(movies, comments, source='requests'):
 
 def run_requests_spider(download_posters=False):
     logger.info("="*50)
-    logger.info("开始运行全Selenium版本爬虫")
+    logger.info("开始运行requests列表页 + Selenium详情页爬虫")
     logger.info("="*50)
     
     start_time = time.time()
     driver = None
     
     try:
-        # 1. 初始化浏览器（只启动一次，共用）
+        # 1. 使用requests + BeautifulSoup爬取列表页
         from requests_version.basic_spider import BasicMovieSpider
         basic_spider = BasicMovieSpider()
-        driver = basic_spider.driver
         
         # 2. 爬取列表页
         movies = basic_spider.crawl_all_pages()
@@ -49,8 +48,10 @@ def run_requests_spider(download_posters=False):
             logger.error("列表页未获取到任何电影，终止运行")
             return
         
-        # 3. 爬取详情页和短评（共用同一个浏览器）
+        # 3. 初始化浏览器并爬取详情页和短评
+        from requests_version.selenium_driver import create_chrome_driver
         from requests_version.detail_spider import DetailSpider
+        driver = create_chrome_driver()
         detail_spider = DetailSpider(driver)
         detailed_movies, comments = detail_spider.crawl_movie_details(movies)
         
@@ -92,7 +93,7 @@ def run_requests_spider(download_posters=False):
             driver.quit()
         
         end_time = time.time()
-        logger.info(f"全Selenium版本爬虫运行完成，总耗时: {end_time - start_time:.2f}秒")
+        logger.info(f"requests列表页 + Selenium详情页爬虫运行完成，总耗时: {end_time - start_time:.2f}秒")
         
     except Exception as e:
         logger.error(f"爬虫运行异常: {e}")
@@ -159,10 +160,10 @@ def run_analysis_and_visualization():
 
 def main():
     parser = argparse.ArgumentParser(description='豆瓣电影Top250爬虫与数据分析系统')
-    parser.add_argument('--requests', action='store_true', help='运行全Selenium版本爬虫')
+    parser.add_argument('--requests', action='store_true', help='运行requests列表页 + Selenium详情页爬虫')
     parser.add_argument('--scrapy', action='store_true', help='运行Scrapy版本爬虫')
     parser.add_argument('--analysis', action='store_true', help='运行数据分析和可视化')
-    parser.add_argument('--all', action='store_true', help='运行全Selenium爬虫和数据分析')
+    parser.add_argument('--all', action='store_true', help='运行requests/Selenium爬虫和数据分析')
     parser.add_argument('--download-posters', action='store_true', help='运行requests爬虫时下载海报')
     args = parser.parse_args()
     

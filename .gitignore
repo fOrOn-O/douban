@@ -9,3 +9,5 @@ data/posters/*
 data/charts/*
 .env
 chromedriver.exe
+proxies.txt
+*.part

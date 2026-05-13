@@ -1,0 +1,6 @@
+# 代理池示例文件
+# 使用方法：复制本文件为 proxies.txt，每行填写一个可用代理。
+# 支持 HTTP/HTTPS 代理，格式如下：
+# http://127.0.0.1:7890
+# http://username:password@proxy.example.com:8080
+# https://proxy.example.com:8443

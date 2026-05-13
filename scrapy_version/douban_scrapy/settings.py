@@ -47,13 +47,12 @@ DEFAULT_REQUEST_HEADERS = {
 }
 
 # Enable or disable spider middlewares
-SPIDER_MIDDLEWARES = {
-    "douban_scrapy.middlewares.RandomUserAgentMiddleware": 543,
-    "douban_scrapy.middlewares.RandomDelayMiddleware": 544,
-}
+SPIDER_MIDDLEWARES = {}
 
 # Enable or disable downloader middlewares
 DOWNLOADER_MIDDLEWARES = {
+    "douban_scrapy.middlewares.RandomUserAgentMiddleware": 543,
+    "douban_scrapy.middlewares.RandomDelayMiddleware": 544,
     "douban_scrapy.middlewares.RetryMiddleware": 550,
 }
 

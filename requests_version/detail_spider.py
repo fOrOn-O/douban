@@ -118,7 +118,7 @@ class DetailSpider(AntiCrawlStrategy):
         return comments[:max_comments]
     
     def crawl_movie_details(self, movies):
-        logger.info("开始爬取电影详情页和短评（全Selenium模式）")
+        logger.info("开始爬取电影详情页和短评（Selenium动态页面模式）")
         
         detailed_movies = []
         all_comments = []

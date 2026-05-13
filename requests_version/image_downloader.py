@@ -1,9 +1,9 @@
-﻿from tqdm import tqdm
+﻿import os
+from tqdm import tqdm
 from bs4 import BeautifulSoup
 from config import POSTERS_DIR
 from utils.logger import logger
 from .anti_crawl import AntiCrawlStrategy
-import os
 
 class PosterDownloader(AntiCrawlStrategy):
     def __init__(self, driver=None):
@@ -35,14 +35,24 @@ class PosterDownloader(AntiCrawlStrategy):
             logger.debug(f"海报已存在: {filename}")
             return save_path
         
+        part_path = f"{save_path}.part"
+        downloaded_size = os.path.getsize(part_path) if os.path.exists(part_path) else 0
+        headers = {'Range': f'bytes={downloaded_size}-'} if downloaded_size > 0 else None
+        
         try:
-            response = self.session.get(poster_url, stream=True, timeout=30)
+            response = self.session.get(poster_url, stream=True, timeout=30, headers=headers)
             response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))
+            if downloaded_size > 0 and response.status_code != 206:
+                downloaded_size = 0
             
-            with open(save_path, 'wb') as f, tqdm(
+            content_length = int(response.headers.get('content-length', 0))
+            total_size = downloaded_size + content_length if response.status_code == 206 else content_length
+            mode = 'ab' if downloaded_size > 0 and response.status_code == 206 else 'wb'
+            
+            with open(part_path, mode) as f, tqdm(
                 desc=f"下载 {movie_title[:20]}",
                 total=total_size,
+                initial=downloaded_size,
                 unit='B',
                 unit_scale=True,
                 unit_divisor=1024,
@@ -53,13 +63,12 @@ class PosterDownloader(AntiCrawlStrategy):
                         f.write(chunk)
                         pbar.update(len(chunk))
             
+            os.replace(part_path, save_path)
             logger.debug(f"海报下载完成: {filename}")
             return save_path
         
         except Exception as e:
             logger.error(f"海报下载失败: {movie_title}, 错误: {e}")
-            if os.path.exists(save_path):
-                os.remove(save_path)
             return None
     
     def download_all_posters(self, movies, download=True):

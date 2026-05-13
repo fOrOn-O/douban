@@ -1,53 +1,13 @@
 from bs4 import BeautifulSoup
 import re
-import random
-import time
 from tqdm import tqdm
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 from utils.logger import logger
-from config import REQUEST_DELAY_MIN, REQUEST_DELAY_MAX, HEADLESS_MODE
-from utils.user_agents import get_random_user_agent
+from .anti_crawl import AntiCrawlStrategy
 
-class BasicMovieSpider:
-    def __init__(self, driver=None):
+class BasicMovieSpider(AntiCrawlStrategy):
+    def __init__(self):
+        super().__init__()
         self.movies = []
-        self.driver = driver if driver else self._init_driver()
-    
-    def _init_driver(self):
-        chrome_options = Options()
-        # 无头模式（后台运行，不显示浏览器窗口）
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        
-        # 关键：混淆浏览器指纹
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        
-        # 随机User-Agent
-        chrome_options.add_argument(f'user-agent={get_random_user_agent()}')
-        
-        driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=chrome_options
-        )
-        
-        # 删除webdriver标志
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
-        return driver
-    
-    def random_delay(self):
-        delay = random.uniform(REQUEST_DELAY_MIN + 2, REQUEST_DELAY_MAX + 3)
-        time.sleep(delay)
     
     def parse_list_page(self, html):
         soup = BeautifulSoup(html, 'lxml')
@@ -110,7 +70,8 @@ class BasicMovieSpider:
                 continue
     
     def crawl_all_pages(self):
-        logger.info("开始爬取豆瓣电影Top250列表页（全Selenium模式）")
+        logger.info("开始爬取豆瓣电影Top250列表页（requests + BeautifulSoup模式）")
+        self.check_robots_txt(path='/top250')
         
         base_url = 'https://movie.douban.com/top250'
         
@@ -118,14 +79,11 @@ class BasicMovieSpider:
             url = f"{base_url}?start={page}&filter="
             
             try:
-                self.driver.get(url)
-                self.random_delay()
-                
-                # 滚动页面，模拟真人浏览
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                self.random_delay()
-                
-                self.parse_list_page(self.driver.page_source)
+                response = self.get_with_retry(url)
+                if not response:
+                    logger.error(f"第{page//25 + 1}页请求失败，跳过")
+                    continue
+                self.parse_list_page(response.text)
                 
             except Exception as e:
                 logger.error(f"第{page//25 + 1}页爬取失败: {e}")
