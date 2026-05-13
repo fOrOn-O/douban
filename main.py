@@ -11,6 +11,7 @@ from analysis.analyzer import DataAnalyzer
 from analysis.sentiment_analysis import SentimentAnalyzer
 from analysis.visualizer import DataVisualizer
 from config import BASE_DIR, CSV_DIR
+from utils.performance_recorder import record_performance
 
 def save_spider_data_to_csv(movies, comments, source='requests'):
     movie_columns = [
@@ -35,6 +36,8 @@ def run_requests_spider(download_posters=False):
     
     start_time = time.time()
     driver = None
+    detailed_movies = []
+    comments = []
     
     try:
         # 1. 使用requests + BeautifulSoup爬取列表页
@@ -46,6 +49,7 @@ def run_requests_spider(download_posters=False):
         
         if len(movies) == 0:
             logger.error("列表页未获取到任何电影，终止运行")
+            record_performance('requests', time.time() - start_time, success=False, movie_count=0, comment_count=0)
             return
         
         # 3. 初始化浏览器并爬取详情页和短评
@@ -93,10 +97,24 @@ def run_requests_spider(download_posters=False):
             driver.quit()
         
         end_time = time.time()
-        logger.info(f"requests列表页 + Selenium详情页爬虫运行完成，总耗时: {end_time - start_time:.2f}秒")
+        elapsed_seconds = end_time - start_time
+        record_performance(
+            'requests',
+            elapsed_seconds,
+            movie_count=len(detailed_movies),
+            comment_count=len(comments)
+        )
+        logger.info(f"requests列表页 + Selenium详情页爬虫运行完成，总耗时: {elapsed_seconds:.2f}秒")
         
     except Exception as e:
         logger.error(f"爬虫运行异常: {e}")
+        record_performance(
+            'requests',
+            time.time() - start_time,
+            success=False,
+            movie_count=len(detailed_movies),
+            comment_count=len(comments)
+        )
         try:
             if driver:
                 driver.quit()
@@ -110,12 +128,19 @@ def run_scrapy_spider():
     
     start_time = time.time()
     
-    # 切换到scrapy目录并运行爬虫
-    scrapy_dir = os.path.join(BASE_DIR, 'scrapy_version')
-    subprocess.run([sys.executable, '-m', 'scrapy', 'crawl', 'douban_movie'], cwd=scrapy_dir, check=True)
-    
-    end_time = time.time()
-    logger.info(f"Scrapy版本爬虫运行完成，总耗时: {end_time - start_time:.2f}秒")
+    try:
+        # 切换到scrapy目录并运行爬虫
+        scrapy_dir = os.path.join(BASE_DIR, 'scrapy_version')
+        subprocess.run([sys.executable, '-m', 'scrapy', 'crawl', 'douban_movie'], cwd=scrapy_dir, check=True)
+        
+        end_time = time.time()
+        elapsed_seconds = end_time - start_time
+        record_performance('scrapy', elapsed_seconds)
+        logger.info(f"Scrapy版本爬虫运行完成，总耗时: {elapsed_seconds:.2f}秒")
+    except Exception as e:
+        elapsed_seconds = time.time() - start_time
+        record_performance('scrapy', elapsed_seconds, success=False, movie_count=0, comment_count=0)
+        logger.error(f"Scrapy版本爬虫运行异常: {e}")
 
 def run_analysis_and_visualization():
     logger.info("="*50)
@@ -142,7 +167,14 @@ def run_analysis_and_visualization():
     visualizer.generate_all_charts()
     
     end_time = time.time()
-    logger.info(f"数据分析和可视化完成，总耗时: {end_time - start_time:.2f}秒")
+    elapsed_seconds = end_time - start_time
+    record_performance(
+        'analysis',
+        elapsed_seconds,
+        movie_count=len(movies_df),
+        comment_count=len(comments_with_sentiment)
+    )
+    logger.info(f"数据分析和可视化完成，总耗时: {elapsed_seconds:.2f}秒")
     
     # 打印分析结果摘要
     print("\n" + "="*50)

@@ -28,10 +28,12 @@
 3. 需要验证Scrapy框架能力时运行 `python main.py --scrapy`。
 4. 数据分析和图表生成运行 `python main.py --analysis`。
 
-## 实测记录模板
+## 实测记录（自动更新）
 
-| 版本 | 运行命令 | 电影数 | 短评数 | 耗时 | 成功率 | 备注 |
-|---|---|---:|---:|---:|---:|---|
-| requests/Selenium | `python main.py --requests` | 250 | 3700+ | 视网络而定 | 高 | 适合完整采集 |
-| Scrapy | `python main.py --scrapy` | 待实测 | 待实测 | 视网络而定 | 中 | 适合框架展示 |
-| 分析流程 | `python main.py --analysis` | 250 | 3700+ | 约10-80秒 | 高 | 情感缓存后更快 |
+每次运行 `python main.py --requests`、`python main.py --scrapy` 或 `python main.py --analysis` 后，程序会自动统计 CSV 行数和运行耗时，并更新下表。成功率按 Top250 的 250 部电影覆盖率计算。
+
+| 版本 | 运行命令 | 电影数 | 短评数 | 耗时 | 成功率 | 备注 | 更新时间 |
+|---|---|---:|---:|---:|---:|---|---|
+| requests/Selenium | `python main.py --requests` | 待实测 | 待实测 | 待实测 | 待实测 | 适合完整采集 | 待实测 |
+| Scrapy | `python main.py --scrapy` | 待实测 | 待实测 | 待实测 | 待实测 | 适合框架展示 | 待实测 |
+| 分析流程 | `python main.py --analysis` | 50 | 3707 | 8.01秒 | 20.0% | 情感缓存后更快 | 2026-05-13 14:54:56 |
