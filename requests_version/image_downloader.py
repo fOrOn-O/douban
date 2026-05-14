@@ -1,26 +1,38 @@
 ﻿import os
+import time
+import random
 from tqdm import tqdm
 from bs4 import BeautifulSoup
-from config import POSTERS_DIR
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from config import POSTERS_DIR, REQUEST_DELAY_MIN, REQUEST_DELAY_MAX
 from utils.logger import logger
 from .anti_crawl import AntiCrawlStrategy
 
 class PosterDownloader(AntiCrawlStrategy):
-    def __init__(self, driver=None):
+    def __init__(self, driver):
         super().__init__()
         self.driver = driver
-    
+
     def get_poster_url(self, detail_url):
-        response = self.get_with_retry(detail_url)
-        if not response:
+        try:
+            self.driver.get(detail_url)
+            # 等待海报图片元素加载完成
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'img[rel="v:image"]'))
+            )
+            time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
+
+            soup = BeautifulSoup(self.driver.page_source, 'lxml')
+            poster_img = soup.find('img', rel='v:image')
+
+            if poster_img and 'src' in poster_img.attrs:
+                return poster_img['src']
             return None
-        
-        soup = BeautifulSoup(response.text, 'lxml')
-        poster_img = soup.find('img', rel='v:image')
-        
-        if poster_img and 'src' in poster_img.attrs:
-            return poster_img['src']
-        return None
+        except Exception as e:
+            logger.error(f"获取海报URL失败: {detail_url}, 错误: {e}")
+            return None
     
     def download_poster(self, poster_url, movie_title):
         if not poster_url:

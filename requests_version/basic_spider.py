@@ -72,18 +72,21 @@ class BasicMovieSpider(AntiCrawlStrategy):
     def crawl_all_pages(self):
         logger.info("开始爬取豆瓣电影Top250列表页（requests + BeautifulSoup模式）")
         self.check_robots_txt(path='/top250')
-        
+        self.warm_up_session()
+
         base_url = 'https://movie.douban.com/top250'
-        
+        referer = 'https://movie.douban.com/'
+
         for page in tqdm(range(0, 250, 25), desc="爬取列表页"):
             url = f"{base_url}?start={page}&filter="
-            
+
             try:
-                response = self.get_with_retry(url)
+                response = self.get_with_retry(url, referer=referer)
                 if not response:
                     logger.error(f"第{page//25 + 1}页请求失败，跳过")
                     continue
                 self.parse_list_page(response.text)
+                referer = url
                 
             except Exception as e:
                 logger.error(f"第{page//25 + 1}页爬取失败: {e}")

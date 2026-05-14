@@ -142,6 +142,53 @@ def run_scrapy_spider():
         record_performance('scrapy', elapsed_seconds, success=False, movie_count=0, comment_count=0)
         logger.error(f"Scrapy版本爬虫运行异常: {e}")
 
+def run_poster_download():
+    logger.info("="*50)
+    logger.info("开始单独下载电影海报")
+    logger.info("="*50)
+
+    start_time = time.time()
+
+    # 从CSV加载已有的电影数据
+    csv_path = os.path.join(CSV_DIR, 'movies_cleaned.csv')
+    if not os.path.exists(csv_path):
+        csv_path = os.path.join(CSV_DIR, 'movies_requests.csv')
+    if not os.path.exists(csv_path):
+        logger.error("未找到电影数据CSV文件，请先运行爬虫")
+        return
+
+    movies_df = pd.read_csv(csv_path)
+    if 'detail_url' not in movies_df.columns:
+        logger.error("CSV中缺少detail_url列")
+        return
+
+    movies = movies_df.to_dict('records')
+    logger.info(f"从CSV加载了{len(movies)}部电影数据")
+
+    driver = None
+    try:
+        from requests_version.selenium_driver import create_chrome_driver
+        from requests_version.image_downloader import PosterDownloader
+
+        driver = create_chrome_driver()
+        poster_downloader = PosterDownloader(driver)
+        movies = poster_downloader.download_all_posters(movies, download=True)
+
+        # 更新CSV中的poster_path列
+        movies_df = pd.DataFrame(movies)
+        movies_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+        logger.info(f"海报路径已更新到CSV: {csv_path}")
+
+        elapsed_seconds = time.time() - start_time
+        downloaded = sum(1 for m in movies if m.get('poster_path'))
+        logger.info(f"海报下载完成，成功: {downloaded}/{len(movies)}，耗时: {elapsed_seconds:.2f}秒")
+
+    except Exception as e:
+        logger.error(f"海报下载异常: {e}")
+    finally:
+        if driver:
+            driver.quit()
+
 def run_analysis_and_visualization():
     logger.info("="*50)
     logger.info("开始数据分析和可视化")
@@ -197,10 +244,14 @@ def main():
     parser.add_argument('--analysis', action='store_true', help='运行数据分析和可视化')
     parser.add_argument('--all', action='store_true', help='运行requests/Selenium爬虫和数据分析')
     parser.add_argument('--download-posters', action='store_true', help='运行requests爬虫时下载海报')
+    parser.add_argument('--posters', action='store_true', help='仅下载海报（从已有CSV数据）')
     args = parser.parse_args()
     
     if args.requests:
         run_requests_spider(download_posters=args.download_posters)
+        return
+    if args.posters:
+        run_poster_download()
         return
     if args.scrapy:
         run_scrapy_spider()
@@ -220,10 +271,11 @@ def main():
     print("2. 运行Scrapy版本爬虫")
     print("3. 运行数据分析和可视化")
     print("4. 运行全部流程")
+    print("5. 仅下载海报（从已有数据）")
     print("="*50)
-    
-    choice = input("请输入选项(1-4): ")
-    
+
+    choice = input("请输入选项(1-5): ")
+
     if choice == '1':
         run_requests_spider()
     elif choice == '2':
@@ -233,6 +285,8 @@ def main():
     elif choice == '4':
         run_requests_spider()
         run_analysis_and_visualization()
+    elif choice == '5':
+        run_poster_download()
     else:
         print("无效的选项")
 

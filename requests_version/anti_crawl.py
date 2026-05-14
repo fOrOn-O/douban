@@ -11,6 +11,7 @@ class AntiCrawlStrategy:
         self.session = requests.Session()
         self.proxy_pool = self.load_proxy_pool()
         self.proxy_failures = {}
+        self._session_warmed = False
         self.update_headers()
     
     def load_proxy_pool(self):
@@ -24,15 +25,33 @@ class AntiCrawlStrategy:
             logger.info("未发现proxies.txt，使用直连模式")
             return []
     
-    def update_headers(self):
+    def update_headers(self, referer='https://movie.douban.com/'):
         self.session.headers.update({
             'User-Agent': get_random_user_agent(),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2',
             'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
+            'Upgrade-Insecure-Requests': '1',
+            'Referer': referer,
         })
+
+    def warm_up_session(self, base_url='https://movie.douban.com/'):
+        """先访问站点首页，拿到常见 Cookie（如 bid），可降低部分 403 概率。"""
+        if self._session_warmed:
+            return True
+        proxies = self.get_random_proxy()
+        try:
+            self.random_delay()
+            r = self.session.get(base_url, timeout=TIMEOUT, proxies=proxies)
+            if r.status_code == 200:
+                self._session_warmed = True
+                logger.info("会话预热成功（已访问电影首页）")
+                return True
+            logger.warning(f"会话预热未成功，状态码: {r.status_code}")
+        except Exception as e:
+            logger.warning(f"会话预热请求异常: {e}")
+        return False
     
     def random_delay(self):
         delay = random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX)
@@ -68,10 +87,11 @@ class AntiCrawlStrategy:
             logger.warning(f"Robots.txt检查失败: {e}")
             return None
     
-    def get_with_retry(self, url):
+    def get_with_retry(self, url, referer='https://movie.douban.com/'):
         for attempt in range(MAX_RETRIES):
             proxies = self.get_random_proxy()
             try:
+                self.update_headers(referer=referer)
                 self.random_delay()
                 response = self.session.get(url, timeout=TIMEOUT, proxies=proxies)
                 
@@ -81,7 +101,7 @@ class AntiCrawlStrategy:
                     logger.warning(f"遇到反爬限制，状态码: {response.status_code}，等待后重试")
                     self.record_proxy_failure(proxies)
                     time.sleep(10 * (attempt + 1))
-                    self.update_headers()
+                    self.update_headers(referer=referer)
                 else:
                     logger.warning(f"请求失败，状态码: {response.status_code}")
                     self.record_proxy_failure(proxies)
