@@ -30,9 +30,17 @@ class DBConnector:
         if self.connection and self.connection.open:
             self.connection.close()
             logger.info("数据库连接已关闭")
-    
+
+    def _ensure_connection(self):
+        try:
+            self.connection.ping(reconnect=False)
+        except Exception:
+            logger.warning("数据库连接已断开，尝试重连...")
+            self.connect()
+
     def execute_query(self, sql, params=None):
         try:
+            self._ensure_connection()
             with self.connection.cursor() as cursor:
                 cursor.execute(sql, params)
                 result = cursor.fetchall()
@@ -41,9 +49,10 @@ class DBConnector:
             logger.error(f"查询执行失败: {e}")
             self.connection.rollback()
             raise
-    
+
     def execute_update(self, sql, params=None):
         try:
+            self._ensure_connection()
             with self.connection.cursor() as cursor:
                 affected_rows = cursor.execute(sql, params)
                 self.connection.commit()
@@ -55,16 +64,21 @@ class DBConnector:
     
     def insert_movie(self, movie_data):
         sql = """
-        INSERT INTO movies (`rank`, title_cn, title_en, rating, rating_count, 
-                           director, actors, summary, detail_url, release_year, 
+        INSERT INTO movies (`rank`, title_cn, title_en, rating, rating_count,
+                           director, actors, summary, detail_url, release_year,
                            duration, genres, imdb_rating, poster_path)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
-        rating=VALUES(rating), rating_count=VALUES(rating_count),
-        director=VALUES(director), actors=VALUES(actors), summary=VALUES(summary),
-        release_year=VALUES(release_year), duration=VALUES(duration),
-        genres=VALUES(genres), imdb_rating=VALUES(imdb_rating),
-        poster_path=VALUES(poster_path)
+        rating = IFNULL(NULLIF(VALUES(rating), 0), rating),
+        rating_count = IFNULL(NULLIF(VALUES(rating_count), 0), rating_count),
+        director = IFNULL(NULLIF(VALUES(director), ''), director),
+        actors = IFNULL(NULLIF(VALUES(actors), ''), actors),
+        summary = IFNULL(NULLIF(VALUES(summary), ''), summary),
+        release_year = IFNULL(VALUES(release_year), release_year),
+        duration = IFNULL(NULLIF(VALUES(duration), ''), duration),
+        genres = IFNULL(NULLIF(VALUES(genres), ''), genres),
+        imdb_rating = IFNULL(VALUES(imdb_rating), imdb_rating),
+        poster_path = IFNULL(NULLIF(VALUES(poster_path), ''), poster_path)
         """
         return self.execute_update(sql, (
             movie_data.get('rank', 0), movie_data.get('title_cn', ''), movie_data.get('title_en', ''),
@@ -78,13 +92,21 @@ class DBConnector:
         sql = """
         INSERT INTO comments (movie_id, reviewer, rating, content, comment_time, sentiment)
         VALUES (%s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+        rating = IFNULL(VALUES(rating), rating),
+        content = IFNULL(NULLIF(VALUES(content), ''), content),
+        comment_time = IFNULL(VALUES(comment_time), comment_time)
         """
         return self.execute_update(sql, (
             comment_data.get('movie_id'), comment_data.get('reviewer', ''),
             comment_data.get('rating'), comment_data.get('content', ''),
             comment_data.get('comment_time'), comment_data.get('sentiment')
         ))
-    
+
+    def update_comment_sentiment(self, comment_id, sentiment):
+        sql = "UPDATE comments SET sentiment = %s WHERE id = %s"
+        return self.execute_update(sql, (sentiment, comment_id))
+
     def get_movie_id_by_url(self, detail_url):
         sql = "SELECT id FROM movies WHERE detail_url = %s"
         result = self.execute_query(sql, (detail_url,))

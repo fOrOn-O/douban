@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS movies (
     genres VARCHAR(255),
     imdb_rating FLOAT,
     poster_path VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 -- 短评表
@@ -31,5 +32,7 @@ CREATE TABLE IF NOT EXISTS comments (
     comment_time DATETIME,
     sentiment FLOAT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_movie_reviewer (movie_id, reviewer),
     FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE
 );

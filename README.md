@@ -64,9 +64,15 @@ requests_version/image_downloader.py
 ### 3. 数据存储与 Scrapy 框架重构
 
 - MySQL 存储：
-  - `movies` 主表
-  - `comments` 短评表
+  - `movies` 主表（含 `created_at` / `updated_at` 自动时间戳）
+  - `comments` 短评表（含 `updated_at`，`movie_id + reviewer` 唯一索引防重复）
   - 使用外键关联
+  - `insert_movie` 使用 `IFNULL(NULLIF(...))` 防止空值覆盖已有有效数据
+  - `insert_comment` 使用 `ON DUPLICATE KEY UPDATE` 实现幂等插入，重复爬取不产生冗余记录
+  - `DBConnector` 支持连接断开自动重连（`ping` + 自动 `reconnect`）
+- 数据库迁移：
+  - `database/migrate.py` 幂等迁移脚本，可安全重复执行
+  - 自动添加 `updated_at` 字段、清理重复评论、建立唯一索引
 - CSV 备份：
   - `data/csv/movies_requests.csv`
   - `data/csv/comments_requests.csv`
@@ -75,21 +81,19 @@ requests_version/image_downloader.py
 - JSON 备份：
   - Scrapy Pipeline 输出到 `data/json`
 - Scrapy 重构内容：
-  - Item
-  - Spider
-  - Pipeline
-  - Downloader Middleware
-  - 随机 UA
-  - 随机延时
-  - 重试
-  - Cookie
-  - 并发控制
+  - Item / Spider / Pipeline / Downloader Middleware
+  - 随机 UA 中间件
+  - 下载延时 8 秒 + 随机浮动
+  - 重试中间件（触发 403/429 后指数退避：30s → 60s → 120s）
+  - 会话预热中间件（启动时访问豆瓣首页获取 cookies）
+  - 并发控制（并发数 1）
 
 核心文件：
 
 ```text
 database/schema.sql
 database/db_connector.py
+database/migrate.py
 scrapy_version/douban_scrapy/items.py
 scrapy_version/douban_scrapy/spiders/movie_spider.py
 scrapy_version/douban_scrapy/pipelines.py
@@ -122,6 +126,9 @@ scrapy_version/douban_scrapy/settings.py
   - `jieba` 分词
   - `SnowNLP` 情感分数
   - 正面/中性/负面比例统计
+  - 分析结果自动回写数据库（不仅存 CSV）
+- 可视化容错：
+  - 每张图表独立生成，单张失败不影响其余图表输出
 
 核心文件：
 
@@ -135,7 +142,7 @@ analysis/visualizer.py
 ### 5. 工程实践与优化
 
 - 日志：
-  - 文件日志
+  - 文件日志（按日期滚动）
   - 控制台日志
 - 进度条：
   - `tqdm`
@@ -143,11 +150,17 @@ analysis/visualizer.py
   - 爬虫请求异常
   - 页面解析异常
   - 数据库不可用自动回退 CSV
+  - 数据库连接断开自动重连
+  - 可视化图表单张失败不影响其余
+- 海报下载：
+  - `.part` 临时文件 + `Range` 请求实现断点续传
+  - 下载完成后完整性校验（文件大小 vs Content-Length）
+  - 纯中文标题自动使用 MD5 哈希作为文件名，避免文件名冲突
 - Scrapy 性能控制：
-  - 并发数控制
-  - 下载延时
-  - 随机延时
-  - 重试中间件
+  - 并发数 1
+  - 下载延时 8 秒 + 随机浮动
+  - 触发反爬后指数退避（30s → 60s → 120s）
+  - 会话预热（启动时访问首页获取 cookies）
 - 代理池：
   - 复制 `proxies.example.txt` 为 `proxies.txt`
   - 每行填写一个代理
@@ -158,15 +171,22 @@ analysis/visualizer.py
 douban_movie_analyzer/
 ├── analysis/                  # 数据清洗、统计分析、情感分析、可视化
 ├── data/                      # CSV、JSON、图表、海报输出
-├── database/                  # MySQL连接与建表SQL
+├── database/                  # MySQL连接、建表SQL、迁移脚本
+│   ├── schema.sql             # 建表语句（含 updated_at 字段和评论唯一索引）
+│   ├── db_connector.py        # 数据库操作（防覆盖、幂等插入、自动重连）
+│   └── migrate.py             # 数据库迁移脚本（幂等执行）
 ├── docs/                      # 说明文档与版本对比
 ├── requests_version/          # requests基础爬虫 + Selenium详情爬虫
 ├── scrapy_version/            # Scrapy框架重构版本
-├── utils/                     # 日志、User-Agent池、停用词
-├── config.py                  # 全局配置
-├── main.py                    # 项目入口
-├── proxies.example.txt        # 代理池示例
-└── requirements.txt           # 依赖列表
+├── utils/                     # 日志、User-Agent池、停用词、性能记录
+│   ├── logger.py              # 双输出日志（文件+控制台）
+│   ├── user_agents.py         # 随机User-Agent池
+│   ├── performance_recorder.py # 运行性能自动记录与文档更新
+│   └── stopwords.txt          # 中文停用词表
+├── config.py                  # 全局配置（从 .env 加载）
+├── main.py                    # 项目入口（CLI参数 / 交互菜单）
+├── proxies.example.txt        # 代理池配置示例
+└── requirements.txt           # Python依赖列表
 ```
 
 ## 环境准备
@@ -177,10 +197,16 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-如果使用 MySQL，请先执行：
+如果使用 MySQL，请先执行建表：
 
 ```bash
 mysql -u root -p < database/schema.sql
+```
+
+已有数据库需执行迁移（添加 `updated_at` 字段和评论唯一索引）：
+
+```bash
+python database/migrate.py
 ```
 
 如不配置 MySQL，项目会自动使用 CSV 数据进行分析。

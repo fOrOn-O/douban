@@ -18,29 +18,11 @@ class DoubanMovieSpider(scrapy.Spider):
     allowed_domains = ['movie.douban.com']
     start_urls = ['https://movie.douban.com/top250']
     
-    # 【新增】手动添加 start_requests，带完整的反爬请求头
     def start_requests(self):
         base_url = 'https://movie.douban.com/top250'
         for page in range(0, 250, 25):
             url = f"{base_url}?start={page}&filter="
-            yield scrapy.Request(
-                url=url,
-                callback=self.parse,
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
-                    'Cache-Control': 'max-age=0',
-                    'Referer': 'https://www.douban.com/',
-                },
-                dont_filter=True
-            )
+            yield scrapy.Request(url=url, callback=self.parse, dont_filter=True)
     
     def parse(self, response):
         # 解析列表页
@@ -105,10 +87,6 @@ class DoubanMovieSpider(scrapy.Spider):
                     url=movie['detail_url'],
                     callback=self.parse_detail,
                     meta={'movie': movie},
-                    headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-                        'Referer': 'https://movie.douban.com/top250',
-                    }
                 )
                 
             except Exception as e:
@@ -121,12 +99,9 @@ class DoubanMovieSpider(scrapy.Spider):
             next_url = next_page['href']
             full_next_url = response.urljoin(next_url)
             yield scrapy.Request(
-                url=full_next_url, 
+                url=full_next_url,
                 callback=self.parse,
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-                    'Referer': response.url,
-                }
+                headers={'Referer': response.url},
             )
     
     def parse_detail(self, response):
@@ -168,10 +143,7 @@ class DoubanMovieSpider(scrapy.Spider):
                 url=comments_url,
                 callback=self.parse_comments,
                 meta={'movie_url': movie['detail_url']},
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-                    'Referer': movie['detail_url'],
-                }
+                headers={'Referer': movie['detail_url']},
             )
             
         except Exception as e:
@@ -204,7 +176,7 @@ class DoubanMovieSpider(scrapy.Spider):
                     time_str = time_span['title'] if 'title' in time_span.attrs else time_span.text.strip()
                     try:
                         comment['comment_time'] = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
-                    except:
+                    except (ValueError, TypeError):
                         comment['comment_time'] = None
                 else:
                     comment['comment_time'] = None

@@ -37,9 +37,12 @@ class PosterDownloader(AntiCrawlStrategy):
     def download_poster(self, poster_url, movie_title):
         if not poster_url:
             return None
-        
+
         file_ext = poster_url.split('.')[-1].split('?')[0]
         safe_title = "".join([c for c in movie_title if c.isalnum() or c in (' ', '-', '_')]).strip()
+        if not safe_title:
+            import hashlib
+            safe_title = hashlib.md5(movie_title.encode('utf-8')).hexdigest()[:12]
         filename = f"{safe_title}.{file_ext}"
         save_path = os.path.join(POSTERS_DIR, filename)
         
@@ -75,6 +78,13 @@ class PosterDownloader(AntiCrawlStrategy):
                         f.write(chunk)
                         pbar.update(len(chunk))
             
+            # 完整性校验：确认实际下载大小与预期一致
+            actual_size = os.path.getsize(part_path)
+            if total_size > 0 and actual_size != total_size:
+                logger.warning(f"海报文件不完整: {filename} (预期 {total_size}B, 实际 {actual_size}B)")
+                os.remove(part_path)
+                return None
+
             os.replace(part_path, save_path)
             logger.debug(f"海报下载完成: {filename}")
             return save_path

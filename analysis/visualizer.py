@@ -174,12 +174,22 @@ class DataVisualizer:
     
     def generate_all_charts(self):
         logger.info("开始生成所有可视化图表")
-        
-        self.plot_rating_distribution()
-        self.plot_genre_distribution()
-        self.plot_rating_vs_reviews()
-        self.plot_year_trend()
-        self.plot_sentiment_distribution()
-        self.generate_wordcloud()
-        
-        logger.info(f"所有图表已生成并保存到: {self.output_dir}")
+
+        chart_methods = [
+            ('评分分布', self.plot_rating_distribution),
+            ('类型分布', self.plot_genre_distribution),
+            ('评分与评论关系', self.plot_rating_vs_reviews),
+            ('上映年份趋势', self.plot_year_trend),
+            ('情感分布', self.plot_sentiment_distribution),
+            ('短评词云', self.generate_wordcloud),
+        ]
+
+        success_count = 0
+        for name, method in chart_methods:
+            try:
+                method()
+                success_count += 1
+            except Exception as e:
+                logger.error(f"图表「{name}」生成失败: {e}")
+
+        logger.info(f"图表生成完成: {success_count}/{len(chart_methods)} 成功，保存到: {self.output_dir}")

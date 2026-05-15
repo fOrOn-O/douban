@@ -34,13 +34,13 @@ class SentimentAnalyzer:
         try:
             s = SnowNLP(text)
             return s.sentiments
-        except:
+        except Exception:
             return 0.5  # 中性
     
-    def run(self):
+    def run(self, db=None):
         logger.info("开始进行短评情感分析")
         if self.comments_df.empty:
-            self.comments_df['sentiment'] = []
+            self.comments_df['sentiment'] = pd.Series(dtype=float)
             sentiment_stats = {
                 'positive': 0,
                 'positive_ratio': 0,
@@ -82,5 +82,17 @@ class SentimentAnalyzer:
         }
         
         logger.info(f"情感分析完成: 正面{positive}({positive/total:.1%}), 中性{neutral}({neutral/total:.1%}), 负面{negative}({negative/total:.1%})")
-        
+
+        # 将情感分析结果回写数据库
+        if db is not None and 'id' in self.comments_df.columns:
+            try:
+                updated = 0
+                for _, row in self.comments_df[missing_sentiment].iterrows():
+                    if pd.notna(row.get('id')) and pd.notna(row['sentiment']):
+                        db.update_comment_sentiment(int(row['id']), float(row['sentiment']))
+                        updated += 1
+                logger.info(f"已将 {updated} 条情感分析结果回写数据库")
+            except Exception as e:
+                logger.warning(f"情感分析结果回写数据库失败: {e}")
+
         return self.comments_df, sentiment_stats

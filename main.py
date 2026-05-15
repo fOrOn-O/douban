@@ -67,15 +67,16 @@ def run_requests_spider(download_posters=False):
         save_spider_data_to_csv(detailed_movies, comments)
         
         # 5. 保存到数据库
+        db = None
         try:
             db = DBConnector()
             logger.info("开始保存数据到数据库")
-            
+
             for movie in detailed_movies:
                 try:
                     db.insert_movie(movie)
                     movie_id = db.get_movie_id_by_url(movie['detail_url'])
-                    
+
                     # 保存该电影的评论
                     movie_comments = [c for c in comments if c['movie_url'] == movie['detail_url']]
                     for comment in movie_comments:
@@ -87,10 +88,11 @@ def run_requests_spider(download_posters=False):
                 except Exception as e:
                     logger.error(f"保存电影数据失败: {movie.get('title_cn', '未知')}, 错误: {e}")
                     continue
-            
-            db.close()
         except Exception as e:
             logger.warning(f"数据库保存失败，已保留CSV文件用于后续分析: {e}")
+        finally:
+            if db:
+                db.close()
         
         # 6. 关闭浏览器
         if driver:
@@ -118,7 +120,7 @@ def run_requests_spider(download_posters=False):
         try:
             if driver:
                 driver.quit()
-        except:
+        except Exception:
             pass
 
 def run_scrapy_spider():
@@ -204,10 +206,20 @@ def run_analysis_and_visualization():
     analyzer = DataAnalyzer(movies_df, comments_df)
     analysis_results = analyzer.run_all_analysis()
     
-    # 3. 情感分析
-    sentiment_analyzer = SentimentAnalyzer(comments_df)
-    comments_with_sentiment, sentiment_stats = sentiment_analyzer.run()
-    cleaner.save_cleaned_data(movies_df, comments_with_sentiment)
+    # 3. 情感分析（尝试连接数据库以回写结果）
+    db = None
+    try:
+        db = DBConnector()
+    except Exception:
+        logger.info("数据库不可用，情感分析结果仅保存到CSV")
+
+    try:
+        sentiment_analyzer = SentimentAnalyzer(comments_df)
+        comments_with_sentiment, sentiment_stats = sentiment_analyzer.run(db=db)
+        cleaner.save_cleaned_data(movies_df, comments_with_sentiment)
+    finally:
+        if db:
+            db.close()
     
     # 4. 可视化
     visualizer = DataVisualizer(movies_df, comments_with_sentiment, analysis_results, sentiment_stats)

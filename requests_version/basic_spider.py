@@ -46,8 +46,9 @@ class BasicMovieSpider(AntiCrawlStrategy):
                     movie['rating_count'] = 0
                 
                 # 导演和主演
-                info_text = item.find('div', class_='bd').p.text.strip()
-                info_lines = info_text.split('\n')
+                info_p = bd_div.p if bd_div else None
+                info_text = info_p.text.strip() if info_p else ''
+                info_lines = info_text.split('\n') if info_text else ['']
                 
                 director_match = re.search(r'导演: (.*?)(?:主演|$)', info_lines[0])
                 movie['director'] = director_match.group(1).strip() if director_match else ''

@@ -22,9 +22,10 @@ CONCURRENT_REQUESTS = 1
 CONCURRENT_REQUESTS_PER_DOMAIN = 1
 CONCURRENT_REQUESTS_PER_IP = 1
 
-# ✅ 3. 增加下载延时（从2秒改成5-8秒）
-DOWNLOAD_DELAY = 5
-RANDOMIZE_DOWNLOAD_DELAY = True  # 开启随机延时
+# ✅ 3. 下载延时 8-12 秒，触发反爬后退避 30s 起步
+DOWNLOAD_DELAY = 8
+RANDOMIZE_DOWNLOAD_DELAY = True
+RETRY_BACKOFF_BASE = 30
 
 # Disable cookies (enabled by default)
 COOKIES_ENABLED = True
@@ -51,8 +52,8 @@ SPIDER_MIDDLEWARES = {}
 
 # Enable or disable downloader middlewares
 DOWNLOADER_MIDDLEWARES = {
+    "douban_scrapy.middlewares.SessionWarmupMiddleware": 542,
     "douban_scrapy.middlewares.RandomUserAgentMiddleware": 543,
-    "douban_scrapy.middlewares.RandomDelayMiddleware": 544,
     "douban_scrapy.middlewares.RetryMiddleware": 550,
 }
 
