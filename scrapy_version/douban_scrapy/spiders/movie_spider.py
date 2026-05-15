@@ -61,15 +61,26 @@ class DoubanMovieSpider(scrapy.Spider):
                     movie['rating'] = 0.0
                     movie['rating_count'] = 0
                 
-                # 导演和主演
-                info_text = item.find('div', class_='bd').p.text.strip()
-                info_lines = info_text.split('\n')
-                
-                director_match = re.search(r'导演: (.*?)(?:主演|$)', info_lines[0])
+                # 导演和主演（第1行）
+                info_p = bd_div.p if bd_div else None
+                info_text = info_p.text.strip() if info_p else ''
+                info_lines = [line.strip() for line in info_text.split('\n') if line.strip()] if info_text else []
+
+                director_match = re.search(r'导演: (.*?)(?:主演|$)', info_lines[0]) if info_lines else None
                 movie['director'] = director_match.group(1).strip() if director_match else ''
-                
-                actors_match = re.search(r'主演: (.*)', info_lines[0])
+
+                actors_match = re.search(r'主演: (.*)', info_lines[0]) if info_lines else None
                 movie['actors'] = actors_match.group(1).strip() if actors_match else ''
+
+                # 年份、国家、类型（第2行：如 "1994 / 美国 / 犯罪 剧情"）
+                if len(info_lines) >= 2:
+                    parts = [p.strip() for p in info_lines[1].split('/')]
+                    year_match = re.search(r'\d{4}', parts[0]) if parts else None
+                    movie['release_year'] = int(year_match.group()) if year_match else None
+                    movie['genres'] = '/'.join(parts[2:]) if len(parts) >= 3 else ''
+                else:
+                    movie['release_year'] = None
+                    movie['genres'] = ''
                 
                 # ✅ 【修复】列表页一句话简介（class从inq改成了quote）
                 quote_p = item.find('p', class_='quote')
@@ -107,7 +118,13 @@ class DoubanMovieSpider(scrapy.Spider):
     def parse_detail(self, response):
         movie = response.meta['movie']
         soup = BeautifulSoup(response.text, 'lxml')
-        
+
+        # 检测是否被重定向到安全挑战页面
+        if 'sec.douban.com' in response.url:
+            logger.warning(f"详情页被重定向到安全挑战页面，跳过: {movie.get('title_cn', '未知')}")
+            yield movie
+            return
+
         try:
             # 解析详情信息（只保留数据库有的字段）
             year_span = soup.find('span', class_='year')
@@ -152,6 +169,12 @@ class DoubanMovieSpider(scrapy.Spider):
     
     def parse_comments(self, response):
         movie_url = response.meta['movie_url']
+
+        # 检测是否被重定向到安全挑战页面
+        if 'sec.douban.com' in response.url:
+            logger.warning(f"评论页被重定向到安全挑战页面，跳过: {movie_url}")
+            return
+
         soup = BeautifulSoup(response.text, 'lxml')
         comment_items = soup.find_all('div', class_='comment-item')[:15]  # 取前15条
         
