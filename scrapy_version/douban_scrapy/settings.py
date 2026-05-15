@@ -17,15 +17,23 @@ NEWSPIDER_MODULE = "douban_scrapy.spiders"
 # ✅ 1. 已关闭 robots.txt 遵守
 ROBOTSTXT_OBEY = False
 
-# ✅ 2. 大幅减少并发请求（避免被封）
+# ✅ 2. 并发控制（豆瓣对并发极敏感，必须为 1）
 CONCURRENT_REQUESTS = 1
 CONCURRENT_REQUESTS_PER_DOMAIN = 1
 CONCURRENT_REQUESTS_PER_IP = 1
 
-# ✅ 3. 下载延时 8-12 秒，触发反爬后退避 30s 起步
-DOWNLOAD_DELAY = 8
+# ✅ 3. 下载延时 5 秒 + Autothrottle 自适应调节
+DOWNLOAD_DELAY = 5
 RANDOMIZE_DOWNLOAD_DELAY = True
-RETRY_BACKOFF_BASE = 30
+RETRY_BACKOFF_BASE = 90
+CHALLENGE_MAX_RETRY_TIMES = 0
+
+# ✅ 3.1 Autothrottle 自适应限速（根据响应延迟自动调节爬取速度）
+AUTOTHROTTLE_ENABLED = True
+AUTOTHROTTLE_START_DELAY = 5
+AUTOTHROTTLE_MAX_DELAY = 60
+AUTOTHROTTLE_TARGET_CONCURRENCY = 1.0
+AUTOTHROTTLE_DEBUG = False
 
 # Disable cookies (enabled by default)
 COOKIES_ENABLED = True
@@ -54,7 +62,8 @@ SPIDER_MIDDLEWARES = {}
 DOWNLOADER_MIDDLEWARES = {
     "douban_scrapy.middlewares.SessionWarmupMiddleware": 542,
     "douban_scrapy.middlewares.RandomUserAgentMiddleware": 543,
-    "douban_scrapy.middlewares.RetryMiddleware": 550,
+    # 高于 Scrapy 内置 RedirectMiddleware(600)，先拦截跳转到 sec.douban.com 的 302。
+    "douban_scrapy.middlewares.RetryMiddleware": 610,
 }
 
 # Enable or disable extensions

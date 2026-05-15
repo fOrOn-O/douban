@@ -92,7 +92,7 @@ class DetailSpider(AntiCrawlStrategy):
                         time_str = time_span['title'] if 'title' in time_span.attrs else time_span.text.strip()
                         try:
                             comment['comment_time'] = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
-                        except:
+                        except (ValueError, TypeError):
                             comment['comment_time'] = None
                     else:
                         comment['comment_time'] = None
@@ -108,7 +108,7 @@ class DetailSpider(AntiCrawlStrategy):
                         load_more_btn.click()
                         self.random_delay()
                         load_attempts += 1
-                    except:
+                    except Exception:
                         logger.debug("没有更多评论可加载")
                         break
         

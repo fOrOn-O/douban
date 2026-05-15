@@ -4,9 +4,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 数据库配置
+try:
+    _db_port = int(os.getenv('DB_PORT', 3306))
+except ValueError:
+    _db_port = 3306
+
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
-    'port': int(os.getenv('DB_PORT', 3306)),
+    'port': _db_port,
     'user': os.getenv('DB_USER', 'root'),
     'password': os.getenv('DB_PASSWORD', ''),
     'database': os.getenv('DB_NAME', 'douban_movies'),

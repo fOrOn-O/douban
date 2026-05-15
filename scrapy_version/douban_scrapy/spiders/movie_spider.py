@@ -92,11 +92,15 @@ class DoubanMovieSpider(scrapy.Spider):
                 
                 # 详情链接
                 movie['detail_url'] = title_div.a['href']
+                movie['duration'] = ''
+                movie['imdb_rating'] = None
+                movie['poster_path'] = None
                 
                 # 跟进详情页
                 yield scrapy.Request(
                     url=movie['detail_url'],
                     callback=self.parse_detail,
+                    errback=self.parse_detail_error,
                     meta={'movie': movie},
                 )
                 
@@ -120,8 +124,8 @@ class DoubanMovieSpider(scrapy.Spider):
         soup = BeautifulSoup(response.text, 'lxml')
 
         # 检测是否被重定向到安全挑战页面
-        if 'sec.douban.com' in response.url:
-            logger.warning(f"详情页被重定向到安全挑战页面，跳过: {movie.get('title_cn', '未知')}")
+        if self._is_block_page(response.url):
+            logger.warning(f"详情页被重定向到访问限制页面，保存列表页基础数据: {movie.get('title_cn', '未知')}")
             yield movie
             return
 
@@ -166,13 +170,19 @@ class DoubanMovieSpider(scrapy.Spider):
         except Exception as e:
             logger.error(f"解析详情页失败: {movie.get('title_cn', '未知')}, 错误: {e}")
             yield movie
+
+    def parse_detail_error(self, failure):
+        movie = failure.request.meta.get('movie')
+        if movie:
+            logger.warning(f"详情页请求失败，保存列表页基础数据: {movie.get('title_cn', '未知')}, 原因: {failure.value}")
+            yield movie
     
     def parse_comments(self, response):
         movie_url = response.meta['movie_url']
 
         # 检测是否被重定向到安全挑战页面
-        if 'sec.douban.com' in response.url:
-            logger.warning(f"评论页被重定向到安全挑战页面，跳过: {movie_url}")
+        if self._is_block_page(response.url):
+            logger.warning(f"评论页被重定向到访问限制页面，跳过: {movie_url}")
             return
 
         soup = BeautifulSoup(response.text, 'lxml')
@@ -211,3 +221,6 @@ class DoubanMovieSpider(scrapy.Spider):
             except Exception as e:
                 logger.error(f"解析评论失败: {e}")
                 continue
+
+    def _is_block_page(self, url):
+        return 'sec.douban.com' in url or 'douban.com/misc/sorry' in url

@@ -1,3 +1,4 @@
 ﻿version,display_name,command,movie_count,comment_count,duration,success_rate,note,updated_at
 requests,requests/Selenium,python main.py --requests,250,1110,99分32.91秒,100.0%,适合完整采集,2026-05-15 00:31:36
+scrapy,Scrapy,python main.py --scrapy,200,0,22分4.29秒,80.0%,适合框架展示,2026-05-15 21:33:56
 analysis,分析流程,python main.py --analysis,250,3954,1分0.96秒,100.0%,情感缓存后更快,2026-05-15 00:32:41

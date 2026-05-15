@@ -1,7 +1,8 @@
 import random
-import time
+from urllib.parse import parse_qs, urlparse
+from twisted.internet import reactor, task
 from scrapy.downloadermiddlewares.useragent import UserAgentMiddleware
-from scrapy.http import HtmlResponse
+from scrapy.exceptions import IgnoreRequest
 from utils.user_agents import USER_AGENTS
 from utils.logger import logger
 
@@ -15,48 +16,84 @@ class RandomUserAgentMiddleware(UserAgentMiddleware):
         return None
 
 class RetryMiddleware:
-    def __init__(self, max_retry_times=3, backoff_base=30):
+    def __init__(self, max_retry_times=3, challenge_max_retry_times=1, backoff_base=60):
         self.max_retry_times = max_retry_times
+        self.challenge_max_retry_times = challenge_max_retry_times
         self.backoff_base = backoff_base
 
     @classmethod
     def from_crawler(cls, crawler):
         return cls(
             max_retry_times=crawler.settings.get('MAX_RETRY_TIMES', 3),
-            backoff_base=crawler.settings.get('RETRY_BACKOFF_BASE', 30)
+            challenge_max_retry_times=crawler.settings.get('CHALLENGE_MAX_RETRY_TIMES', 1),
+            backoff_base=crawler.settings.get('RETRY_BACKOFF_BASE', 60)
         )
 
     def process_response(self, request, response, spider):
-        # 检测是否被重定向到豆瓣安全挑战页面（sec.douban.com）
-        if 'sec.douban.com' in response.url:
-            retries = request.meta.get('retry_times', 0) + 1
-            if retries <= self.max_retry_times:
-                wait = self.backoff_base * (2 ** (retries - 1))
-                logger.warning(f"触发安全挑战 (sec.douban.com)，等待 {wait}s 后重试 ({retries}/{self.max_retry_times}): {request.url}")
-                time.sleep(wait)
-                # 用原始 URL 重新发起请求，不跟随重定向
-                retry_req = request.copy()
-                retry_req.meta['retry_times'] = retries
+        # 拦截豆瓣安全挑战/访问限制页。不要重试拦截页本身，只对原始 URL 做有限冷却重试。
+        block_url = self._get_block_url(response)
+        if block_url:
+            original_url = self._get_original_url(request, response, block_url)
+            retries = request.meta.get('challenge_retry_times', 0) + 1
+
+            if retries <= self.challenge_max_retry_times:
+                wait = self.backoff_base * retries + random.uniform(10, 30)
+                logger.warning(
+                    f"触发豆瓣访问限制，冷却 {wait:.0f}s 后重试原始页面 "
+                    f"({retries}/{self.challenge_max_retry_times}): {original_url}"
+                )
+                retry_req = request.replace(url=original_url)
+                retry_req.meta['challenge_retry_times'] = retries
+                retry_req.meta.pop('redirect_urls', None)
+                retry_req.meta.pop('redirect_reasons', None)
                 retry_req.dont_filter = True
-                retry_req.cookies = {}  # 清除旧 cookies，重新获取
-                return retry_req
-            else:
-                logger.error(f"安全挑战重试耗尽，放弃请求: {request.url}")
-                return response
+                dfd = task.deferLater(reactor, wait, lambda: retry_req)
+                return dfd
+
+            logger.error(f"豆瓣访问限制重试耗尽，放弃原始请求: {original_url}")
+            raise IgnoreRequest(f"豆瓣访问限制重试耗尽: {original_url}")
 
         if response.status in [403, 429, 500, 502, 503, 504]:
             retries = request.meta.get('retry_times', 0) + 1
             if retries <= self.max_retry_times:
-                wait = self.backoff_base * (2 ** (retries - 1))
-                logger.warning(f"触发反爬 ({response.status})，等待 {wait}s 后重试 ({retries}/{self.max_retry_times}): {response.url}")
-                time.sleep(wait)
+                wait = 10 * retries + random.uniform(0, 5)
+                logger.warning(f"触发反爬 ({response.status})，{wait:.0f}s 后重试 ({retries}/{self.max_retry_times}): {response.url}")
                 retry_req = request.copy()
                 retry_req.meta['retry_times'] = retries
                 retry_req.dont_filter = True
-                return retry_req
+                # 非阻塞延时后重新入队
+                dfd = task.deferLater(reactor, wait, lambda: retry_req)
+                return dfd
             else:
                 logger.error(f"重试次数耗尽，放弃请求: {response.url}")
         return response
+
+    def _get_block_url(self, response):
+        if self._is_block_url(response.url):
+            return response.url
+
+        location = response.headers.get('Location')
+        if not location:
+            return None
+
+        location_url = location.decode('utf-8', errors='ignore')
+        return location_url if self._is_block_url(location_url) else None
+
+    def _is_block_url(self, url):
+        return 'sec.douban.com' in url or 'douban.com/misc/sorry' in url
+
+    def _get_original_url(self, request, response, block_url):
+        redirect_urls = request.meta.get('redirect_urls') or []
+        if redirect_urls:
+            return redirect_urls[0]
+
+        parsed = urlparse(block_url)
+        query = parse_qs(parsed.query)
+        target = query.get('r', [None])[0] or query.get('original-url', [None])[0]
+        if target:
+            return target
+
+        return request.url
 
 class SessionWarmupMiddleware:
     """在爬虫启动时先访问豆瓣首页建立会话，获取 cookies"""

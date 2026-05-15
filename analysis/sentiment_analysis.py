@@ -19,7 +19,7 @@ class SentimentAnalyzer:
             with open(stopwords_path, 'r', encoding='utf-8') as f:
                 for line in f:
                     stopwords.add(line.strip())
-        except:
+        except (FileNotFoundError, IOError, OSError):
             logger.warning("停用词文件未找到，使用默认空集合")
         return stopwords
     

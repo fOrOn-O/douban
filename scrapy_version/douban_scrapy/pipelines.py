@@ -1,6 +1,7 @@
 import json
 import csv
 import os
+import tempfile
 from database.db_connector import DBConnector
 from config import CSV_DIR, JSON_DIR
 from utils.logger import logger
@@ -44,56 +45,104 @@ class MySQLPipeline:
 
 class JsonPipeline:
     def open_spider(self, spider):
-        self.movies_file = open(os.path.join(JSON_DIR, 'movies_scrapy.json'), 'w', encoding='utf-8')
-        self.comments_file = open(os.path.join(JSON_DIR, 'comments_scrapy.json'), 'w', encoding='utf-8')
-        self.movies_file.write('[\n')
-        self.comments_file.write('[\n')
+        self.movies_path = os.path.join(JSON_DIR, 'movies_scrapy.json')
+        self.comments_path = os.path.join(JSON_DIR, 'comments_scrapy.json')
+        self.movies_tmp = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json', dir=JSON_DIR, delete=False, encoding='utf-8')
+        self.comments_tmp = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json', dir=JSON_DIR, delete=False, encoding='utf-8')
+        self.movies_tmp.write('[\n')
+        self.comments_tmp.write('[\n')
         self.first_movie = True
         self.first_comment = True
-    
+        self.movie_count = 0
+        self.comment_count = 0
+
     def close_spider(self, spider):
-        self.movies_file.write('\n]')
-        self.comments_file.write('\n]')
-        self.movies_file.close()
-        self.comments_file.close()
-    
+        try:
+            self.movies_tmp.write('\n]')
+            self.comments_tmp.write('\n]')
+        except Exception:
+            pass
+        finally:
+            self.movies_tmp.close()
+            self.comments_tmp.close()
+
+        # 有数据才替换原文件，无数据时保留原文件不变
+        if self.movie_count > 0:
+            os.replace(self.movies_tmp.name, self.movies_path)
+            logger.info(f"JSON 电影文件已更新: {self.movie_count} 条")
+        else:
+            os.remove(self.movies_tmp.name)
+
+        if self.comment_count > 0:
+            os.replace(self.comments_tmp.name, self.comments_path)
+            logger.info(f"JSON 评论文件已更新: {self.comment_count} 条")
+        else:
+            os.remove(self.comments_tmp.name)
+
     def process_item(self, item, spider):
         if item.__class__.__name__ == 'MovieItem':
             if not self.first_movie:
-                self.movies_file.write(',\n')
-            json.dump(dict(item), self.movies_file, ensure_ascii=False, indent=2, default=str)
+                self.movies_tmp.write(',\n')
+            json.dump(dict(item), self.movies_tmp, ensure_ascii=False, indent=2, default=str)
             self.first_movie = False
-        
+            self.movie_count += 1
+
         elif item.__class__.__name__ == 'CommentItem':
             if not self.first_comment:
-                self.comments_file.write(',\n')
-            json.dump(dict(item), self.comments_file, ensure_ascii=False, indent=2, default=str)
+                self.comments_tmp.write(',\n')
+            json.dump(dict(item), self.comments_tmp, ensure_ascii=False, indent=2, default=str)
             self.first_comment = False
-        
+            self.comment_count += 1
+
         return item
 
 class CsvPipeline:
     def open_spider(self, spider):
+        self.movies_path = os.path.join(CSV_DIR, 'movies_scrapy.csv')
+        self.comments_path = os.path.join(CSV_DIR, 'comments_scrapy.csv')
+        self.movies_tmp = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.csv', dir=CSV_DIR, delete=False, newline='', encoding='utf-8-sig')
+        self.comments_tmp = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.csv', dir=CSV_DIR, delete=False, newline='', encoding='utf-8-sig')
         self.movies_writer = None
         self.comments_writer = None
-        self.movies_file = open(os.path.join(CSV_DIR, 'movies_scrapy.csv'), 'w', newline='', encoding='utf-8-sig')
-        self.comments_file = open(os.path.join(CSV_DIR, 'comments_scrapy.csv'), 'w', newline='', encoding='utf-8-sig')
-    
+        self.movie_count = 0
+        self.comment_count = 0
+
     def close_spider(self, spider):
-        self.movies_file.close()
-        self.comments_file.close()
-    
+        try:
+            self.movies_tmp.close()
+            self.comments_tmp.close()
+        except Exception:
+            pass
+
+        if self.movie_count > 0:
+            os.replace(self.movies_tmp.name, self.movies_path)
+            logger.info(f"CSV 电影文件已更新: {self.movie_count} 条")
+        else:
+            os.remove(self.movies_tmp.name)
+
+        if self.comment_count > 0:
+            os.replace(self.comments_tmp.name, self.comments_path)
+            logger.info(f"CSV 评论文件已更新: {self.comment_count} 条")
+        else:
+            os.remove(self.comments_tmp.name)
+
     def process_item(self, item, spider):
         if item.__class__.__name__ == 'MovieItem':
             if not self.movies_writer:
-                self.movies_writer = csv.DictWriter(self.movies_file, fieldnames=item.keys())
+                self.movies_writer = csv.DictWriter(self.movies_tmp, fieldnames=item.keys())
                 self.movies_writer.writeheader()
             self.movies_writer.writerow(dict(item))
-        
+            self.movie_count += 1
+
         elif item.__class__.__name__ == 'CommentItem':
             if not self.comments_writer:
-                self.comments_writer = csv.DictWriter(self.comments_file, fieldnames=item.keys())
+                self.comments_writer = csv.DictWriter(self.comments_tmp, fieldnames=item.keys())
                 self.comments_writer.writeheader()
             self.comments_writer.writerow(dict(item))
-        
+            self.comment_count += 1
+
         return item

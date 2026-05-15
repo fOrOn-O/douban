@@ -153,11 +153,12 @@ class DataCleaner:
         logger.info(f"清洗后的数据已保存到: {movies_path} 和 {comments_path}")
     
     def run(self):
-        movies_df, comments_df = self.load_data()
-        movies_cleaned = self.clean_movies_data(movies_df)
-        comments_cleaned = self.clean_comments_data(comments_df)
-        self.save_cleaned_data(movies_cleaned, comments_cleaned)
-        if self.db:
-            self.db.close()
-        
-        return movies_cleaned, comments_cleaned
+        try:
+            movies_df, comments_df = self.load_data()
+            movies_cleaned = self.clean_movies_data(movies_df)
+            comments_cleaned = self.clean_comments_data(comments_df)
+            self.save_cleaned_data(movies_cleaned, comments_cleaned)
+            return movies_cleaned, comments_cleaned
+        finally:
+            if self.db:
+                self.db.close()

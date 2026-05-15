@@ -6,6 +6,7 @@ from config import LOGS_DIR
 def setup_logger(name='douban_spider'):
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
+    logger.propagate = False
     
     # 避免重复添加处理器
     if logger.handlers:

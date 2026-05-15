@@ -26,6 +26,13 @@ class DBConnector:
             logger.error(f"数据库连接失败: {e}")
             raise
     
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
     def close(self):
         if self.connection and self.connection.open:
             self.connection.close()
@@ -47,7 +54,6 @@ class DBConnector:
                 return result
         except Exception as e:
             logger.error(f"查询执行失败: {e}")
-            self.connection.rollback()
             raise
 
     def execute_update(self, sql, params=None):

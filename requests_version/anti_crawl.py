@@ -1,8 +1,9 @@
 import time
 import random
+import os
 import requests
 from urllib.robotparser import RobotFileParser
-from config import REQUEST_DELAY_MIN, REQUEST_DELAY_MAX, MAX_RETRIES, TIMEOUT
+from config import BASE_DIR, REQUEST_DELAY_MIN, REQUEST_DELAY_MAX, MAX_RETRIES, TIMEOUT
 from utils.user_agents import get_random_user_agent
 from utils.logger import logger
 
@@ -15,7 +16,7 @@ class AntiCrawlStrategy:
         self.update_headers()
     
     def load_proxy_pool(self):
-        proxy_file = 'proxies.txt'
+        proxy_file = os.path.join(BASE_DIR, 'proxies.txt')
         try:
             with open(proxy_file, 'r', encoding='utf-8') as f:
                 proxies = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]

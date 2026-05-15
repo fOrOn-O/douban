@@ -133,7 +133,7 @@ def run_scrapy_spider():
     try:
         # 切换到scrapy目录并运行爬虫
         scrapy_dir = os.path.join(BASE_DIR, 'scrapy_version')
-        subprocess.run([sys.executable, '-m', 'scrapy', 'crawl', 'douban_movie'], cwd=scrapy_dir, check=True)
+        subprocess.run([sys.executable, '-m', 'scrapy', 'crawl', 'douban_movie'], cwd=scrapy_dir, check=True, timeout=7200)
         
         end_time = time.time()
         elapsed_seconds = end_time - start_time
