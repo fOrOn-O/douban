@@ -7,6 +7,7 @@ from tqdm import tqdm
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 from utils.logger import logger
 from config import REQUEST_DELAY_MIN, REQUEST_DELAY_MAX
 from .anti_crawl import AntiCrawlStrategy
@@ -125,24 +126,38 @@ class DetailSpider(AntiCrawlStrategy):
         
         for movie in tqdm(movies, desc="爬取详情页"):
             try:
-                self.driver.get(movie['detail_url'])
-                self.random_delay()
-                
-                # 滚动页面
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                self.random_delay()
-                
-                detail_info = self.parse_detail_page(self.driver.page_source)
-                movie.update(detail_info)
-                
-                # 获取短评
-                comments = self.get_comments(movie['detail_url'])
-                for comment in comments:
-                    comment['movie_url'] = movie['detail_url']
-                    all_comments.append(comment)
-                
+                page_loaded = False
+                try:
+                    self.driver.get(movie['detail_url'])
+                    page_loaded = True
+                except TimeoutException:
+                    logger.warning(f"详情页加载超时，尝试解析已加载内容: {movie.get('title_cn', '未知')}")
+                    # 页面可能已部分加载，继续尝试解析
+
+                if page_loaded:
+                    self.random_delay()
+
+                # 无论是否超时，尝试解析已有的页面内容
+                page_source = self.driver.page_source
+                if page_source and len(page_source) > 500:
+                    detail_info = self.parse_detail_page(page_source)
+                    movie.update(detail_info)
+
+                    if page_loaded:
+                        # 滚动页面以触发懒加载
+                        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                        self.random_delay()
+
+                    # 获取短评
+                    comments = self.get_comments(movie['detail_url'])
+                    for comment in comments:
+                        comment['movie_url'] = movie['detail_url']
+                        all_comments.append(comment)
+                else:
+                    logger.warning(f"详情页内容为空或过短，跳过解析: {movie.get('title_cn', '未知')}")
+
                 detailed_movies.append(movie)
-                
+
             except Exception as e:
                 logger.error(f"电影详情页爬取失败: {movie.get('title_cn', '未知')}, 错误: {e}")
                 # 即使失败也添加到列表，保持进度
