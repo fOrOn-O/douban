@@ -158,6 +158,13 @@ class DetailSpider(AntiCrawlStrategy):
                     # 页面可能已部分加载，继续尝试解析
 
                 if page_loaded:
+                    # 等待详情页关键元素渲染完成（年份或时长/类型）
+                    try:
+                        WebDriverWait(self.driver, 12).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, 'span.year, span[property="v:runtime"]'))
+                        )
+                    except TimeoutException:
+                        logger.debug(f"详情页元素等待超时，尝试解析已有内容: {movie.get('title_cn', '未知')}")
                     self.random_delay()
 
                 # 无论是否超时，尝试解析已有的页面内容

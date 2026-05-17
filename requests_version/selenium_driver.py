@@ -29,9 +29,6 @@ def create_chrome_driver():
     else:
         service = Service(ChromeDriverManager().install())
 
-    # eager: DOMContentLoaded 后就返回，不等图片等资源加载完
-    chrome_options.page_load_strategy = 'eager'
-
     driver = webdriver.Chrome(service=service, options=chrome_options)
     driver.set_page_load_timeout(45)
     driver.set_script_timeout(30)
