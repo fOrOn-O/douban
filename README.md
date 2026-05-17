@@ -1,10 +1,10 @@
 # 豆瓣电影Top250 爬虫与智能分析平台
 
-Python 网络爬虫期末大作业 | 三人组队项目
+Python 网络爬虫期末大作业 | 个人独立完成项目
 
 ## 项目概述
 
-本项目围绕豆瓣电影 Top250 完成数据采集、存储、清洗、统计分析、情感分析与可视化展示。项目同时提供 `requests + BeautifulSoup/lxml` 基础爬虫、`Selenium` 动态详情页爬虫和 `Scrapy` 框架重构版本。
+本项目围绕豆瓣电影 Top250 完成数据采集、存储、清洗、统计分析、情感分析与可视化展示，由本人独立完成。项目同时提供 `requests + BeautifulSoup/lxml` 基础爬虫、`Selenium` 动态详情页爬虫和 `Scrapy` 框架重构版本。
 
 当前项目的主流程是：先用 `requests + BeautifulSoup` 抓取 Top250 列表页基础信息，再用 `Selenium` 进入详情页和短评页补充片长、类型、IMDb、评论等数据，随后保存到 CSV，并尝试同步写入 MySQL。分析模块会优先读取 MySQL；如果数据库不可用或电影表为空，才会回退读取 CSV。
 
@@ -58,6 +58,8 @@ utils/user_agents.py
 - 支持电影海报下载，并使用 `.part` 临时文件和 `Range` 请求实现断点续传。
 - 默认运行 `python main.py --requests` 时不会下载海报，因此 `poster_path` 通常为空；需要加 `--download-posters` 或单独运行 `--posters` 才会写入海报路径。
 - 短评时间保存到 `comments.comment_time`，不是 `movies` 表字段。
+- 详情页会检测豆瓣访问限制页、验证码页和无效页面；如果详情页无效，会保留列表页基础数据，不再用空的详情字段覆盖已有字段。
+- 详情页字段采用“解析到再更新”的策略，例如只有成功解析到 `duration`、`genres`、`imdb_rating` 时才写入对应字段。
 
 核心文件：
 
@@ -353,7 +355,7 @@ movie_url,reviewer,rating,content,comment_time,sentiment
 字段来源说明：
 
 - `rank`、`title_cn`、`title_en`、`rating`、`rating_count`、`director`、`actors`、`summary`、`detail_url` 主要来自 Top250 列表页。
-- `release_year`、`genres` 既可能来自列表页，也可能被详情页结果覆盖。
+- `release_year`、`genres` 既可能来自列表页，也可能在详情页成功解析后被更完整的结果更新。
 - `duration`、`imdb_rating` 主要来自详情页，详情页解析失败时可能为空。
 - `poster_path` 只有下载海报后才会有值。
 - `comment_time` 属于短评数据，保存在评论 CSV 和数据库 `comments` 表中。
@@ -372,10 +374,10 @@ movie_url,reviewer,rating,content,comment_time,sentiment
 - `duration` 为空：详情页没有解析成功，或豆瓣页面结构/访问状态导致字段缺失。
 - `imdb_rating` 为空：详情页未提供 IMDb 评分，或当前解析规则未匹配到评分文本。
 - `poster_path` 为空：未开启海报下载，或海报元素未解析成功。
-- `genres` 分隔不统一：列表页可能出现空格分隔，详情页成功解析后通常是 `/` 分隔。
+- `genres` 分隔不统一：列表页可能出现空格分隔，详情页成功解析后通常是 `/` 分隔；如果详情页无效，会保留列表页已有类型信息。
 
-## 团队分工建议
+## 个人完成说明
 
-- 成员A：`requests + BeautifulSoup` 基础爬虫、反爬策略、代理池、robots 检查。
-- 成员B：Selenium 动态详情页、短评、海报下载、MySQL/CSV/JSON 存储。
-- 成员C：Scrapy 重构、数据清洗、统计分析、情感分析、可视化与报告。
+- 本项目为个人独立完成项目，不涉及小组成员分工。
+- 本人完成 `requests + BeautifulSoup` 列表页爬虫、Selenium 详情页与短评爬取、海报下载、反爬策略、代理池、MySQL/CSV/JSON 存储。
+- 本人完成 Scrapy 框架重构、数据清洗、统计分析、SnowNLP 情感分析、可视化图表生成和项目文档整理。
