@@ -1,6 +1,6 @@
 # 豆瓣电影Top250 爬虫与智能分析平台
 
-Python 网络爬虫期末大作业 | 个人独立完成项目
+Python 网络爬虫期末大作业 |
 
 ## 项目概述
 
@@ -376,8 +376,7 @@ movie_url,reviewer,rating,content,comment_time,sentiment
 - `poster_path` 为空：未开启海报下载，或海报元素未解析成功。
 - `genres` 分隔不统一：列表页可能出现空格分隔，详情页成功解析后通常是 `/` 分隔；如果详情页无效，会保留列表页已有类型信息。
 
-## 个人完成说明
+## 完成说明
 
-- 本项目为个人独立完成项目，不涉及小组成员分工。
 - 本人完成 `requests + BeautifulSoup` 列表页爬虫、Selenium 详情页与短评爬取、海报下载、反爬策略、代理池、MySQL/CSV/JSON 存储。
 - 本人完成 Scrapy 框架重构、数据清洗、统计分析、SnowNLP 情感分析、可视化图表生成和项目文档整理。
