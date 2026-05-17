@@ -10,6 +10,7 @@ import scrapy
 import re
 from datetime import datetime
 from bs4 import BeautifulSoup
+from scrapy_playwright.page import PageMethod
 from douban_scrapy.items import MovieItem, CommentItem
 from utils.logger import logger
 
@@ -96,12 +97,18 @@ class DoubanMovieSpider(scrapy.Spider):
                 movie['imdb_rating'] = None
                 movie['poster_path'] = None
                 
-                # 跟进详情页
+                # 跟进详情页（Playwright 浏览器渲染）
                 yield scrapy.Request(
                     url=movie['detail_url'],
                     callback=self.parse_detail,
                     errback=self.parse_detail_error,
-                    meta={'movie': movie},
+                    meta={
+                        'movie': movie,
+                        'playwright': True,
+                        'playwright_page_methods': [
+                            PageMethod('wait_for_load_state', 'domcontentloaded'),
+                        ],
+                    },
                 )
                 
             except Exception as e:
@@ -158,13 +165,18 @@ class DoubanMovieSpider(scrapy.Spider):
             
             yield movie
             
-            # 跟进评论页
+            # 跟进评论页（Playwright 浏览器渲染）
             comments_url = f"{movie['detail_url']}comments?sort=new_score&status=P"
             yield scrapy.Request(
                 url=comments_url,
                 callback=self.parse_comments,
-                meta={'movie_url': movie['detail_url']},
-                headers={'Referer': movie['detail_url']},
+                meta={
+                    'movie_url': movie['detail_url'],
+                    'playwright': True,
+                    'playwright_page_methods': [
+                        PageMethod('wait_for_load_state', 'domcontentloaded'),
+                    ],
+                },
             )
             
         except Exception as e:

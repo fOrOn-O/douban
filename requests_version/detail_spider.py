@@ -20,6 +20,24 @@ class DetailSpider(AntiCrawlStrategy):
     def random_delay(self):
         delay = random.uniform(REQUEST_DELAY_MIN + 1, REQUEST_DELAY_MAX + 2)
         time.sleep(delay)
+
+    def _is_block_page(self, html='', url=''):
+        url = url or ''
+        if 'sec.douban.com' in url or 'douban.com/misc/sorry' in url:
+            return True
+        html = html or ''
+        html_lower = html.lower()
+        block_markers = ['检测到有异常请求', '访问过于频繁', '请输入验证码', '豆瓣安全中心', '访问限制']
+        return any(marker in html for marker in block_markers) or 'captcha' in html_lower or 'forbidden' in html_lower
+
+    def _is_valid_detail_page(self, html):
+        soup = BeautifulSoup(html, 'lxml')
+        return bool(
+            soup.find(id='info')
+            or soup.find('span', property='v:itemreviewed')
+            or soup.find('span', property='v:runtime')
+            or soup.find('span', property='v:genre')
+        )
     
     def parse_detail_page(self, html):
         soup = BeautifulSoup(html, 'lxml')
@@ -29,24 +47,26 @@ class DetailSpider(AntiCrawlStrategy):
         year_span = soup.find('span', class_='year')
         if year_span:
             year_match = re.search(r'\d{4}', year_span.text)
-            movie_info['release_year'] = int(year_match.group()) if year_match else None
+            if year_match:
+                movie_info['release_year'] = int(year_match.group())
         
         # 片长
         duration_span = soup.find('span', property='v:runtime')
-        movie_info['duration'] = duration_span.text.strip() if duration_span else ''
+        if duration_span:
+            movie_info['duration'] = duration_span.text.strip()
         
         # 类型
         genre_spans = soup.find_all('span', property='v:genre')
-        movie_info['genres'] = '/'.join([span.text.strip() for span in genre_spans])
+        if genre_spans:
+            movie_info['genres'] = '/'.join([span.text.strip() for span in genre_spans])
         
         # IMDb评分
         imdb_link = soup.find('a', href=re.compile(r'imdb\.com'))
         if imdb_link:
             imdb_text = imdb_link.text.strip()
             imdb_match = re.search(r'(\d+\.\d+)', imdb_text)
-            movie_info['imdb_rating'] = float(imdb_match.group()) if imdb_match else None
-        else:
-            movie_info['imdb_rating'] = None
+            if imdb_match:
+                movie_info['imdb_rating'] = float(imdb_match.group())
         
         return movie_info
     
@@ -57,6 +77,12 @@ class DetailSpider(AntiCrawlStrategy):
         try:
             self.driver.get(comments_url)
             self.random_delay()
+            current_url = self.driver.current_url
+            page_source = self.driver.page_source
+
+            if self._is_block_page(page_source, current_url):
+                logger.warning(f"评论页触发访问限制，跳过: {detail_url}")
+                return comments
             
             # 加载更多评论直到达到要求数量
             load_attempts = 0
@@ -139,9 +165,13 @@ class DetailSpider(AntiCrawlStrategy):
 
                 # 无论是否超时，尝试解析已有的页面内容
                 page_source = self.driver.page_source
-                if page_source and len(page_source) > 500:
+                current_url = self.driver.current_url
+                if page_source and len(page_source) > 500 and not self._is_block_page(page_source, current_url) and self._is_valid_detail_page(page_source):
                     detail_info = self.parse_detail_page(page_source)
-                    movie.update(detail_info)
+                    if detail_info:
+                        movie.update(detail_info)
+                    else:
+                        logger.warning(f"详情页未解析到有效字段，保留列表页基础数据: {movie.get('title_cn', '未知')}")
 
                     if page_loaded:
                         # 滚动页面以触发懒加载
@@ -154,7 +184,7 @@ class DetailSpider(AntiCrawlStrategy):
                         comment['movie_url'] = movie['detail_url']
                         all_comments.append(comment)
                 else:
-                    logger.warning(f"详情页内容为空或过短，跳过解析: {movie.get('title_cn', '未知')}")
+                    logger.warning(f"详情页无效或触发访问限制，保留列表页基础数据: {movie.get('title_cn', '未知')}, 当前URL: {current_url if 'current_url' in locals() else '未知'}")
 
                 detailed_movies.append(movie)
 

@@ -26,7 +26,7 @@ CONCURRENT_REQUESTS_PER_IP = 1
 DOWNLOAD_DELAY = 5
 RANDOMIZE_DOWNLOAD_DELAY = True
 RETRY_BACKOFF_BASE = 90
-CHALLENGE_MAX_RETRY_TIMES = 0
+CHALLENGE_MAX_RETRY_TIMES = 2
 
 # ✅ 3.1 Autothrottle 自适应限速（根据响应延迟自动调节爬取速度）
 AUTOTHROTTLE_ENABLED = True
@@ -82,6 +82,17 @@ ITEM_PIPELINES = {
 REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
+
+# ✅ 5. Playwright 浏览器集成（详情页和评论页需要 JS 渲染）
+DOWNLOAD_HANDLERS = {
+    "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+}
+PLAYWRIGHT_BROWSER_TYPE = "chromium"
+PLAYWRIGHT_LAUNCH_OPTIONS = {
+    "headless": True,
+    "timeout": 30000,
+}
 
 # 重试设置
 MAX_RETRY_TIMES = 3
