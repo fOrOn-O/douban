@@ -72,7 +72,7 @@ class DBConnector:
         sql = """
         INSERT INTO movies (`rank`, title_cn, title_en, rating, rating_count,
                            director, actors, summary, detail_url, release_year,
-                           duration, genres, imdb_rating, poster_path)
+                           duration, genres, imdb_id, poster_path)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
         rating = IFNULL(NULLIF(VALUES(rating), 0), rating),
@@ -83,7 +83,7 @@ class DBConnector:
         release_year = IFNULL(VALUES(release_year), release_year),
         duration = IFNULL(NULLIF(VALUES(duration), ''), duration),
         genres = IFNULL(NULLIF(VALUES(genres), ''), genres),
-        imdb_rating = IFNULL(VALUES(imdb_rating), imdb_rating),
+        imdb_id = IFNULL(NULLIF(VALUES(imdb_id), ''), imdb_id),
         poster_path = IFNULL(NULLIF(VALUES(poster_path), ''), poster_path)
         """
         return self.execute_update(sql, (
@@ -91,7 +91,7 @@ class DBConnector:
             movie_data.get('rating', 0), movie_data.get('rating_count', 0), movie_data.get('director', ''),
             movie_data.get('actors', ''), movie_data.get('summary', ''), movie_data.get('detail_url', ''),
             movie_data.get('release_year'), movie_data.get('duration', ''), movie_data.get('genres', ''),
-            movie_data.get('imdb_rating'), movie_data.get('poster_path')
+            movie_data.get('imdb_id'), movie_data.get('poster_path')
         ))
     
     def insert_comment(self, comment_data):
@@ -117,3 +117,7 @@ class DBConnector:
         sql = "SELECT id FROM movies WHERE detail_url = %s"
         result = self.execute_query(sql, (detail_url,))
         return result[0]['id'] if result else None
+
+    def update_poster_path(self, detail_url, poster_path):
+        sql = "UPDATE movies SET poster_path = %s WHERE detail_url = %s AND (poster_path IS NULL OR poster_path = '')"
+        return self.execute_update(sql, (poster_path, detail_url))

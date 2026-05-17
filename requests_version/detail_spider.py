@@ -60,13 +60,10 @@ class DetailSpider(AntiCrawlStrategy):
         if genre_spans:
             movie_info['genres'] = '/'.join([span.text.strip() for span in genre_spans])
         
-        # IMDb评分
-        imdb_link = soup.find('a', href=re.compile(r'imdb\.com'))
-        if imdb_link:
-            imdb_text = imdb_link.text.strip()
-            imdb_match = re.search(r'(\d+\.\d+)', imdb_text)
-            if imdb_match:
-                movie_info['imdb_rating'] = float(imdb_match.group())
+        # IMDb编号（如 tt0111161）
+        imdb_match = re.search(r'tt\d{7,}', html)
+        if imdb_match:
+            movie_info['imdb_id'] = imdb_match.group()
         
         return movie_info
     

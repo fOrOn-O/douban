@@ -94,7 +94,7 @@ class DoubanMovieSpider(scrapy.Spider):
                 # 详情链接
                 movie['detail_url'] = title_div.a['href']
                 movie['duration'] = ''
-                movie['imdb_rating'] = None
+                movie['imdb_id'] = None
                 movie['poster_path'] = None
                 
                 # 跟进详情页（Playwright 浏览器渲染）
@@ -151,13 +151,9 @@ class DoubanMovieSpider(scrapy.Spider):
             genre_spans = soup.find_all('span', property='v:genre')
             movie['genres'] = '/'.join([span.text.strip() for span in genre_spans]) if genre_spans else ''
             
-            imdb_link = soup.find('a', href=re.compile(r'imdb\.com'))
-            if imdb_link:
-                imdb_text = imdb_link.text.strip()
-                imdb_match = re.search(r'(\d+\.\d+)', imdb_text)
-                movie['imdb_rating'] = float(imdb_match.group()) if imdb_match else None
-            else:
-                movie['imdb_rating'] = None
+            # 提取 IMDb 编号（如 tt0111161）
+            imdb_match = re.search(r'tt\d{7,}', response.text)
+            movie['imdb_id'] = imdb_match.group() if imdb_match else None
             
             # 海报URL
             poster_img = soup.find('img', rel='v:image')

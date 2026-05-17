@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS movies (
     release_year INT,
     duration VARCHAR(50),
     genres VARCHAR(255),
-    imdb_rating FLOAT,
+    imdb_id VARCHAR(20),
     poster_path VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

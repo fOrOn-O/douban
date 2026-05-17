@@ -95,21 +95,22 @@ class PosterDownloader(AntiCrawlStrategy):
     
     def download_all_posters(self, movies, download=True):
         if not download:
-            logger.info("跳过海报下载")
-            for movie in movies:
-                movie['poster_path'] = None
+            logger.info("跳过海报下载，仅获取海报URL")
+            for movie in tqdm(movies, desc="获取海报URL"):
+                poster_url = self.get_poster_url(movie['detail_url'])
+                movie['poster_path'] = poster_url
             return movies
-        
+
         logger.info("开始下载电影海报")
-        
+
         for movie in tqdm(movies, desc="下载海报"):
             poster_url = self.get_poster_url(movie['detail_url'])
             if poster_url:
-                save_path = self.download_poster(poster_url, movie['title_cn'])
-                movie['poster_path'] = save_path
+                movie['poster_path'] = poster_url
+                self.download_poster(poster_url, movie['title_cn'])
             else:
                 movie['poster_path'] = None
                 logger.warning(f"未找到海报: {movie['title_cn']}")
-        
+
         logger.info("海报下载完成")
         return movies

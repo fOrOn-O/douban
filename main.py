@@ -17,7 +17,7 @@ def save_spider_data_to_csv(movies, comments, source='requests'):
     movie_columns = [
         'rank', 'title_cn', 'title_en', 'rating', 'rating_count', 'director',
         'actors', 'summary', 'detail_url', 'release_year', 'duration', 'genres',
-        'imdb_rating', 'poster_path'
+        'imdb_id', 'poster_path'
     ]
     comment_columns = ['movie_url', 'reviewer', 'rating', 'content', 'comment_time', 'sentiment']
     movies_path = os.path.join(CSV_DIR, f'movies_{source}.csv')
@@ -180,6 +180,22 @@ def run_poster_download():
         movies_df = pd.DataFrame(movies)
         movies_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
         logger.info(f"海报路径已更新到CSV: {csv_path}")
+
+        # 更新数据库中的poster_path
+        db = None
+        try:
+            db = DBConnector()
+            updated = 0
+            for movie in movies:
+                if movie.get('poster_path') and movie.get('detail_url'):
+                    affected = db.update_poster_path(movie['detail_url'], movie['poster_path'])
+                    updated += affected or 0
+            logger.info(f"海报路径已更新到数据库: {updated} 条")
+        except Exception as e:
+            logger.warning(f"海报路径写入数据库失败（CSV已保存）: {e}")
+        finally:
+            if db:
+                db.close()
 
         elapsed_seconds = time.time() - start_time
         downloaded = sum(1 for m in movies if m.get('poster_path'))

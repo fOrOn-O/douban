@@ -13,7 +13,7 @@ class MovieItem(scrapy.Item):
     release_year = scrapy.Field()
     duration = scrapy.Field()
     genres = scrapy.Field()
-    imdb_rating = scrapy.Field()
+    imdb_id = scrapy.Field()
     poster_path = scrapy.Field()
 
 class CommentItem(scrapy.Item):
