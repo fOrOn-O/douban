@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "douban_movie_analyzer",
+			"path": "."
+		}
+	],
+	"settings": {
+		"python-envs.defaultEnvManager": "ms-python.python:conda",
+		"python-envs.defaultPackageManager": "ms-python.python:conda"
+	},
+	"workbenchMode": "windsurf-agent-window"
+}

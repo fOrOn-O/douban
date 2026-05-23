@@ -27,6 +27,10 @@ DOWNLOAD_DELAY = 5
 RANDOMIZE_DOWNLOAD_DELAY = True
 RETRY_BACKOFF_BASE = 90
 CHALLENGE_MAX_RETRY_TIMES = 2
+DETAIL_REQUEST_DELAY_MIN = 20
+DETAIL_REQUEST_DELAY_MAX = 45
+COMMENT_REQUEST_DELAY_MIN = 12
+COMMENT_REQUEST_DELAY_MAX = 25
 
 # ✅ 3.1 Autothrottle 自适应限速（根据响应延迟自动调节爬取速度）
 AUTOTHROTTLE_ENABLED = True
@@ -62,6 +66,7 @@ SPIDER_MIDDLEWARES = {}
 DOWNLOADER_MIDDLEWARES = {
     "douban_scrapy.middlewares.SessionWarmupMiddleware": 542,
     "douban_scrapy.middlewares.RandomUserAgentMiddleware": 543,
+    "douban_scrapy.middlewares.DetailDelayMiddleware": 544,
     # 高于 Scrapy 内置 RedirectMiddleware(600)，先拦截跳转到 sec.douban.com 的 302。
     "douban_scrapy.middlewares.RetryMiddleware": 610,
 }
@@ -83,10 +88,8 @@ REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
 
-# ✅ 5. Playwright 浏览器集成（详情页和评论页需要 JS 渲染）
+# ✅ 5. 默认使用 Scrapy 普通 HTTP 下载；不要全局启用 Playwright，避免列表页和详情页都变成浏览器请求。
 DOWNLOAD_HANDLERS = {
-    "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
-    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
 }
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
 PLAYWRIGHT_LAUNCH_OPTIONS = {

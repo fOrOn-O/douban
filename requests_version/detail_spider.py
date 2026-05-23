@@ -3,13 +3,15 @@ import re
 from datetime import datetime
 import random
 import time
+import csv
+import os
 from tqdm import tqdm
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from utils.logger import logger
-from config import REQUEST_DELAY_MIN, REQUEST_DELAY_MAX
+from config import REQUEST_DELAY_MIN, REQUEST_DELAY_MAX, DATA_DIR, DETAIL_MAX_RETRIES, COMMENT_MAX_RETRIES, BLOCK_COOLDOWN_MIN, BLOCK_COOLDOWN_MAX
 from .anti_crawl import AntiCrawlStrategy
 
 class DetailSpider(AntiCrawlStrategy):
@@ -20,6 +22,23 @@ class DetailSpider(AntiCrawlStrategy):
     def random_delay(self):
         delay = random.uniform(REQUEST_DELAY_MIN + 1, REQUEST_DELAY_MAX + 2)
         time.sleep(delay)
+
+    def block_cooldown(self, reason):
+        delay = random.uniform(BLOCK_COOLDOWN_MIN, BLOCK_COOLDOWN_MAX)
+        logger.warning(f"{reason}，冷却 {delay:.0f} 秒后重试")
+        time.sleep(delay)
+
+    def save_failed_movies(self, failed_movies):
+        if not failed_movies:
+            return
+        failed_path = os.path.join(DATA_DIR, 'csv', 'failed_detail_movies.csv')
+        os.makedirs(os.path.dirname(failed_path), exist_ok=True)
+        fieldnames = ['rank', 'title_cn', 'detail_url', 'reason']
+        with open(failed_path, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(failed_movies)
+        logger.warning(f"详情页失败清单已保存: {failed_path}，共 {len(failed_movies)} 部")
 
     def _is_block_page(self, html='', url=''):
         url = url or ''
@@ -38,6 +57,11 @@ class DetailSpider(AntiCrawlStrategy):
             or soup.find('span', property='v:runtime')
             or soup.find('span', property='v:genre')
         )
+
+    def _is_expected_detail_page(self, target_url, current_url):
+        target_match = re.search(r'/subject/(\d+)/', target_url or '')
+        current_match = re.search(r'/subject/(\d+)/', current_url or '')
+        return bool(target_match and current_match and target_match.group(1) == current_match.group(1))
     
     def parse_detail_page(self, html):
         soup = BeautifulSoup(html, 'lxml')
@@ -72,14 +96,19 @@ class DetailSpider(AntiCrawlStrategy):
         comments = []
         
         try:
-            self.driver.get(comments_url)
-            self.random_delay()
-            current_url = self.driver.current_url
-            page_source = self.driver.page_source
+            for attempt in range(1, COMMENT_MAX_RETRIES + 1):
+                self.driver.get(comments_url)
+                self.random_delay()
+                current_url = self.driver.current_url
+                page_source = self.driver.page_source
 
-            if self._is_block_page(page_source, current_url):
-                logger.warning(f"评论页触发访问限制，跳过: {detail_url}")
-                return comments
+                if not self._is_block_page(page_source, current_url):
+                    break
+                if attempt < COMMENT_MAX_RETRIES:
+                    self.block_cooldown(f"评论页触发访问限制 ({attempt}/{COMMENT_MAX_RETRIES}): {detail_url}")
+                else:
+                    logger.warning(f"评论页触发访问限制，跳过: {detail_url}")
+                    return comments
             
             # 加载更多评论直到达到要求数量
             load_attempts = 0
@@ -146,57 +175,77 @@ class DetailSpider(AntiCrawlStrategy):
         
         detailed_movies = []
         all_comments = []
+        failed_movies = []
         
         for movie in tqdm(movies, desc="爬取详情页"):
-            try:
-                page_loaded = False
+            detail_success = False
+            failure_reason = ''
+            for attempt in range(1, DETAIL_MAX_RETRIES + 1):
                 try:
-                    self.driver.get(movie['detail_url'])
-                    page_loaded = True
-                except TimeoutException:
-                    logger.warning(f"详情页加载超时，尝试解析已加载内容: {movie.get('title_cn', '未知')}")
-                    # 页面可能已部分加载，继续尝试解析
-
-                if page_loaded:
-                    # 等待详情页关键元素渲染完成（年份或时长/类型）
+                    page_loaded = False
                     try:
-                        WebDriverWait(self.driver, 12).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, 'span.year, span[property="v:runtime"]'))
-                        )
+                        self.driver.get(movie['detail_url'])
+                        page_loaded = True
                     except TimeoutException:
-                        logger.debug(f"详情页元素等待超时，尝试解析已有内容: {movie.get('title_cn', '未知')}")
-                    self.random_delay()
-
-                # 无论是否超时，尝试解析已有的页面内容
-                page_source = self.driver.page_source
-                current_url = self.driver.current_url
-                if page_source and len(page_source) > 500 and not self._is_block_page(page_source, current_url) and self._is_valid_detail_page(page_source):
-                    detail_info = self.parse_detail_page(page_source)
-                    if detail_info:
-                        movie.update(detail_info)
-                    else:
-                        logger.warning(f"详情页未解析到有效字段，保留列表页基础数据: {movie.get('title_cn', '未知')}")
+                        logger.warning(f"详情页加载超时，尝试解析已加载内容: {movie.get('title_cn', '未知')}")
+                        failure_reason = 'timeout'
+                        # 页面可能已部分加载，继续尝试解析
 
                     if page_loaded:
-                        # 滚动页面以触发懒加载
-                        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                        # 等待详情页关键元素渲染完成（年份或时长/类型）
+                        try:
+                            WebDriverWait(self.driver, 12).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, 'span.year, span[property="v:runtime"]'))
+                            )
+                        except TimeoutException:
+                            logger.debug(f"详情页元素等待超时，尝试解析已有内容: {movie.get('title_cn', '未知')}")
                         self.random_delay()
 
-                    # 获取短评
-                    comments = self.get_comments(movie['detail_url'])
-                    for comment in comments:
-                        comment['movie_url'] = movie['detail_url']
-                        all_comments.append(comment)
-                else:
-                    logger.warning(f"详情页无效或触发访问限制，保留列表页基础数据: {movie.get('title_cn', '未知')}, 当前URL: {current_url if 'current_url' in locals() else '未知'}")
+                    # 无论是否超时，尝试解析已有的页面内容
+                    page_source = self.driver.page_source
+                    current_url = self.driver.current_url
+                    if page_source and len(page_source) > 500 and self._is_expected_detail_page(movie['detail_url'], current_url) and not self._is_block_page(page_source, current_url) and self._is_valid_detail_page(page_source):
+                        detail_info = self.parse_detail_page(page_source)
+                        if detail_info:
+                            movie.update(detail_info)
+                        else:
+                            logger.warning(f"详情页未解析到有效字段，保留列表页基础数据: {movie.get('title_cn', '未知')}")
 
-                detailed_movies.append(movie)
+                        if page_loaded:
+                            # 滚动页面以触发懒加载
+                            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                            self.random_delay()
 
-            except Exception as e:
-                logger.error(f"电影详情页爬取失败: {movie.get('title_cn', '未知')}, 错误: {e}")
-                # 即使失败也添加到列表，保持进度
-                detailed_movies.append(movie)
-                continue
+                        # 获取短评
+                        comments = self.get_comments(movie['detail_url'])
+                        for comment in comments:
+                            comment['movie_url'] = movie['detail_url']
+                            all_comments.append(comment)
+                        detail_success = True
+                        break
+                    else:
+                        failure_reason = f"invalid_or_blocked: {current_url if 'current_url' in locals() else '未知'}"
+                        if attempt < DETAIL_MAX_RETRIES:
+                            self.block_cooldown(f"详情页无效或触发访问限制 ({attempt}/{DETAIL_MAX_RETRIES}): {movie.get('title_cn', '未知')}")
+                        else:
+                            logger.warning(f"详情页无效或触发访问限制，保留列表页基础数据: {movie.get('title_cn', '未知')}, 当前URL: {current_url if 'current_url' in locals() else '未知'}")
+                except Exception as e:
+                    failure_reason = str(e)
+                    if attempt < DETAIL_MAX_RETRIES:
+                        self.block_cooldown(f"电影详情页爬取失败 ({attempt}/{DETAIL_MAX_RETRIES}): {movie.get('title_cn', '未知')}, 错误: {e}")
+                    else:
+                        logger.error(f"电影详情页爬取失败: {movie.get('title_cn', '未知')}, 错误: {e}")
+
+            if not detail_success:
+                failed_movies.append({
+                    'rank': movie.get('rank'),
+                    'title_cn': movie.get('title_cn', ''),
+                    'detail_url': movie.get('detail_url', ''),
+                    'reason': failure_reason
+                })
+            # 即使失败也添加到列表，保持进度
+            detailed_movies.append(movie)
         
+        self.save_failed_movies(failed_movies)
         logger.info(f"详情页爬取完成，共获取{len(detailed_movies)}部电影详情和{len(all_comments)}条短评")
         return detailed_movies, all_comments

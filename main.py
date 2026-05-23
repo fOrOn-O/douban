@@ -10,8 +10,12 @@ from analysis.data_cleaner import DataCleaner
 from analysis.analyzer import DataAnalyzer
 from analysis.sentiment_analysis import SentimentAnalyzer
 from analysis.visualizer import DataVisualizer
-from config import BASE_DIR, CSV_DIR
+from config import BASE_DIR, CSV_DIR, MIN_MOVIES_TO_OVERWRITE
 from utils.performance_recorder import record_performance
+
+def partial_output_path(file_path):
+    root, ext = os.path.splitext(file_path)
+    return f"{root}_partial{ext}"
 
 def save_spider_data_to_csv(movies, comments, source='requests'):
     movie_columns = [
@@ -25,6 +29,13 @@ def save_spider_data_to_csv(movies, comments, source='requests'):
     
     movies_df = pd.DataFrame(movies).reindex(columns=movie_columns)
     comments_df = pd.DataFrame(comments).reindex(columns=comment_columns)
+    if len(movies_df) < MIN_MOVIES_TO_OVERWRITE:
+        movies_path = partial_output_path(movies_path)
+        comments_path = partial_output_path(comments_path)
+        logger.warning(f"本次仅获取{len(movies_df)}部电影，低于覆盖阈值{MIN_MOVIES_TO_OVERWRITE}，结果保存为partial文件")
+    elif len(comments_df) == 0 and os.path.exists(comments_path):
+        comments_path = partial_output_path(comments_path)
+        logger.warning("本次未获取到评论，保留原评论CSV，空评论结果保存为partial文件")
     movies_df.to_csv(movies_path, index=False, encoding='utf-8-sig')
     comments_df.to_csv(comments_path, index=False, encoding='utf-8-sig')
     logger.info(f"爬虫数据已保存到CSV: {movies_path} 和 {comments_path}")
@@ -97,6 +108,7 @@ def run_requests_spider(download_posters=False):
         # 6. 关闭浏览器
         if driver:
             driver.quit()
+            driver = None
         
         end_time = time.time()
         elapsed_seconds = end_time - start_time
@@ -120,6 +132,7 @@ def run_requests_spider(download_posters=False):
         try:
             if driver:
                 driver.quit()
+                driver = None
         except Exception:
             pass
 
@@ -207,7 +220,76 @@ def run_poster_download():
         if driver:
             driver.quit()
 
-def run_analysis_and_visualization():
+def clean_csv_record(record):
+    cleaned = {}
+    for key, value in record.items():
+        if pd.isna(value):
+            cleaned[key] = None
+        elif isinstance(value, pd.Timestamp):
+            cleaned[key] = value.to_pydatetime()
+        else:
+            cleaned[key] = value
+    return cleaned
+
+def run_sync_csv_to_db(source='requests'):
+    logger.info("="*50)
+    logger.info("开始将CSV数据同步到数据库")
+    logger.info("="*50)
+
+    movies_path = os.path.join(CSV_DIR, f'movies_{source}.csv')
+    comments_path = os.path.join(CSV_DIR, f'comments_{source}.csv')
+
+    if not os.path.exists(movies_path):
+        logger.error(f"未找到电影CSV文件: {movies_path}")
+        return
+
+    movies_df = pd.read_csv(movies_path, encoding='utf-8-sig')
+    comments_df = pd.read_csv(comments_path, encoding='utf-8-sig') if os.path.exists(comments_path) else pd.DataFrame()
+
+    if 'comment_time' in comments_df.columns:
+        comments_df['comment_time'] = pd.to_datetime(comments_df['comment_time'], errors='coerce')
+
+    db = None
+    movie_success = 0
+    comment_success = 0
+    skipped_comments = 0
+    try:
+        db = DBConnector()
+        movies = [clean_csv_record(record) for record in movies_df.to_dict('records')]
+        comments = [clean_csv_record(record) for record in comments_df.to_dict('records')]
+
+        for movie in movies:
+            if not movie.get('detail_url'):
+                continue
+            db.insert_movie(movie)
+            movie_success += 1
+
+        for comment in comments:
+            movie_url = comment.get('movie_url')
+            reviewer = comment.get('reviewer')
+            content = comment.get('content')
+            if not movie_url or not reviewer or not str(reviewer).strip() or not content or not str(content).strip():
+                skipped_comments += 1
+                continue
+            movie_id = db.get_movie_id_by_url(movie_url)
+            if not movie_id:
+                skipped_comments += 1
+                continue
+            comment_data = comment.copy()
+            comment_data['movie_id'] = movie_id
+            del comment_data['movie_url']
+            db.insert_comment(comment_data)
+            comment_success += 1
+
+        logger.info(f"CSV同步到数据库完成，电影: {movie_success}/{len(movies_df)}，评论: {comment_success}/{len(comments_df)}，跳过无效评论: {skipped_comments}")
+    except Exception as e:
+        logger.error(f"CSV同步到数据库失败: {e}")
+        raise
+    finally:
+        if db:
+            db.close()
+
+def run_analysis_and_visualization(data_source='auto'):
     logger.info("="*50)
     logger.info("开始数据分析和可视化")
     logger.info("="*50)
@@ -215,7 +297,7 @@ def run_analysis_and_visualization():
     start_time = time.time()
     
     # 1. 数据清洗
-    cleaner = DataCleaner()
+    cleaner = DataCleaner(data_source=data_source)
     movies_df, comments_df = cleaner.run()
     
     # 2. 统计分析
@@ -273,6 +355,8 @@ def main():
     parser.add_argument('--all', action='store_true', help='运行requests/Selenium爬虫和数据分析')
     parser.add_argument('--download-posters', action='store_true', help='运行requests爬虫时下载海报')
     parser.add_argument('--posters', action='store_true', help='仅下载海报（从已有CSV数据）')
+    parser.add_argument('--sync-csv-to-db', action='store_true', help='将已有CSV数据同步到数据库')
+    parser.add_argument('--analysis-source', choices=['auto', 'db', 'csv'], default='auto', help='数据分析来源')
     args = parser.parse_args()
     
     if args.requests:
@@ -285,11 +369,14 @@ def main():
         run_scrapy_spider()
         return
     if args.analysis:
-        run_analysis_and_visualization()
+        run_analysis_and_visualization(data_source=args.analysis_source)
+        return
+    if args.sync_csv_to_db:
+        run_sync_csv_to_db()
         return
     if args.all:
         run_requests_spider(download_posters=args.download_posters)
-        run_analysis_and_visualization()
+        run_analysis_and_visualization(data_source=args.analysis_source)
         return
     
     print("豆瓣电影Top250爬虫与数据分析系统")
@@ -300,9 +387,10 @@ def main():
     print("3. 运行数据分析和可视化")
     print("4. 运行全部流程")
     print("5. 仅下载海报（从已有数据）")
+    print("6. 将已有CSV同步到数据库")
     print("="*50)
 
-    choice = input("请输入选项(1-5): ")
+    choice = input("请输入选项(1-6): ")
 
     if choice == '1':
         run_requests_spider()
@@ -315,6 +403,8 @@ def main():
         run_analysis_and_visualization()
     elif choice == '5':
         run_poster_download()
+    elif choice == '6':
+        run_sync_csv_to_db()
     else:
         print("无效的选项")
 

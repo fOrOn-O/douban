@@ -8,15 +8,15 @@ if project_root not in sys.path:
 
 import scrapy
 import re
+from urllib.parse import parse_qs, urlparse
 from datetime import datetime
 from bs4 import BeautifulSoup
-from scrapy_playwright.page import PageMethod
 from douban_scrapy.items import MovieItem, CommentItem
 from utils.logger import logger
 
 class DoubanMovieSpider(scrapy.Spider):
     name = 'douban_movie'
-    allowed_domains = ['movie.douban.com']
+    allowed_domains = ['movie.douban.com', 'sec.douban.com', 'www.douban.com']
     start_urls = ['https://movie.douban.com/top250']
     
     def start_requests(self):
@@ -97,17 +97,16 @@ class DoubanMovieSpider(scrapy.Spider):
                 movie['imdb_id'] = None
                 movie['poster_path'] = None
                 
-                # 跟进详情页（Playwright 浏览器渲染）
                 yield scrapy.Request(
                     url=movie['detail_url'],
                     callback=self.parse_detail,
                     errback=self.parse_detail_error,
+                    dont_filter=True,
+                    headers={'Referer': response.url},
                     meta={
                         'movie': movie,
-                        'playwright': True,
-                        'playwright_page_methods': [
-                            PageMethod('wait_for_load_state', 'domcontentloaded'),
-                        ],
+                        'return_block_response': True,
+                        'is_detail_request': True,
                     },
                 )
                 
@@ -115,16 +114,7 @@ class DoubanMovieSpider(scrapy.Spider):
                 logger.error(f"解析列表页单个电影失败: {e}")
                 continue
         
-        # 下一页
-        next_page = soup.find('link', rel='next')
-        if next_page:
-            next_url = next_page['href']
-            full_next_url = response.urljoin(next_url)
-            yield scrapy.Request(
-                url=full_next_url,
-                callback=self.parse,
-                headers={'Referer': response.url},
-            )
+        return
     
     def parse_detail(self, response):
         movie = response.meta['movie']
@@ -132,7 +122,12 @@ class DoubanMovieSpider(scrapy.Spider):
 
         # 检测是否被重定向到安全挑战页面
         if self._is_block_page(response.url):
-            logger.warning(f"详情页被重定向到访问限制页面，保存列表页基础数据: {movie.get('title_cn', '未知')}")
+            logger.warning(f"详情页被重定向到访问限制页面，保存列表页基础数据: {movie.get('title_cn', '未知')}, 当前URL: {response.url}")
+            yield movie
+            return
+
+        if not self._is_valid_detail_page(response):
+            logger.warning(f"详情页响应无效，保存列表页基础数据: {movie.get('title_cn', '未知')}, 当前URL: {response.url}")
             yield movie
             return
 
@@ -161,17 +156,17 @@ class DoubanMovieSpider(scrapy.Spider):
             
             yield movie
             
-            # 跟进评论页（Playwright 浏览器渲染）
             comments_url = f"{movie['detail_url']}comments?sort=new_score&status=P"
             yield scrapy.Request(
                 url=comments_url,
                 callback=self.parse_comments,
+                errback=self.parse_comments_error,
+                dont_filter=True,
+                headers={'Referer': movie['detail_url']},
                 meta={
                     'movie_url': movie['detail_url'],
-                    'playwright': True,
-                    'playwright_page_methods': [
-                        PageMethod('wait_for_load_state', 'domcontentloaded'),
-                    ],
+                    'return_block_response': True,
+                    'is_comment_request': True,
                 },
             )
             
@@ -230,5 +225,30 @@ class DoubanMovieSpider(scrapy.Spider):
                 logger.error(f"解析评论失败: {e}")
                 continue
 
+    def parse_comments_error(self, failure):
+        movie_url = failure.request.meta.get('movie_url')
+        logger.warning(f"评论页请求失败，跳过: {movie_url}, 原因: {failure.value}")
+
     def _is_block_page(self, url):
         return 'sec.douban.com' in url or 'douban.com/misc/sorry' in url
+
+    def _is_expected_detail_page(self, target_url, current_url):
+        target_match = re.search(r'/subject/(\d+)/', target_url or '')
+        current_match = re.search(r'/subject/(\d+)/', current_url or '')
+        return bool(target_match and current_match and target_match.group(1) == current_match.group(1))
+
+    def _is_valid_detail_page(self, response):
+        if not self._is_expected_detail_page(response.meta['movie']['detail_url'], response.url):
+            return False
+        soup = BeautifulSoup(response.text, 'lxml')
+        return bool(
+            soup.find(id='info')
+            or soup.find('span', property='v:itemreviewed')
+            or soup.find('span', property='v:runtime')
+            or soup.find('span', property='v:genre')
+        )
+
+    def _original_url_from_block(self, url):
+        parsed = urlparse(url or '')
+        query = parse_qs(parsed.query)
+        return query.get('r', [None])[0] or query.get('original-url', [None])[0] or url

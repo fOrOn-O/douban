@@ -8,7 +8,7 @@ Python 网络爬虫期末大作业 |
 
 当前项目的主流程是：先用 `requests + BeautifulSoup` 抓取 Top250 列表页基础信息，再用 `Selenium` 进入详情页和短评页补充片长、类型、IMDb、评论等数据，随后保存到 CSV，并尝试同步写入 MySQL。分析模块会优先读取 MySQL；如果数据库不可用或电影表为空，才会回退读取 CSV。
 
-需要注意：字段缺失不一定是程序异常。部分字段本身依赖详情页解析或海报下载，例如 `duration`、`imdb_rating`、`poster_path`。如果详情页加载失败、遇到反爬验证、页面结构变化，或者未开启海报下载，这些字段可能为空。
+需要注意：字段缺失不一定是程序异常。部分字段本身依赖详情页解析或海报页解析，例如 `duration`、`imdb_id`、`poster_path`。如果详情页加载失败、遇到反爬验证、页面结构变化，或者海报元素未解析成功，这些字段可能为空。
 
 ## 功能对应课程要求
 
@@ -42,12 +42,12 @@ utils/user_agents.py
 
 ### 2. 进阶详情与动态爬取模块
 
-- 使用 Selenium 无头浏览器进入详情页。
+- 使用 Selenium 浏览器进入详情页。
 - 额外提取：
   - 上映年份
   - 片长
   - 类型
-  - IMDb 评分
+  - IMDb 编号（如 `tt0111161`）
   - 至少前 15 条短评
 - 短评字段：
   - 评论者
@@ -55,11 +55,14 @@ utils/user_agents.py
   - 内容
   - 时间
 - 支持短评“加载更多”动态内容处理。
-- 支持电影海报下载，并使用 `.part` 临时文件和 `Range` 请求实现断点续传。
-- 默认运行 `python main.py --requests` 时不会下载海报，因此 `poster_path` 通常为空；需要加 `--download-posters` 或单独运行 `--posters` 才会写入海报路径。
+- 支持电影海报 URL 解析；开启下载时使用 `.part` 临时文件和 `Range` 请求实现断点续传。
+- 默认运行 `python main.py --requests` 时不下载本地海报文件，但会尝试解析海报网络 URL 并写入 `poster_path`。需要保存本地海报文件时，可加 `--download-posters` 或单独运行 `--posters`。
 - 短评时间保存到 `comments.comment_time`，不是 `movies` 表字段。
 - 详情页会检测豆瓣访问限制页、验证码页和无效页面；如果详情页无效，会保留列表页基础数据，不再用空的详情字段覆盖已有字段。
-- 详情页字段采用“解析到再更新”的策略，例如只有成功解析到 `duration`、`genres`、`imdb_rating` 时才写入对应字段。
+- 详情页和评论页触发访问限制时会冷却后有限重试，重试耗尽才跳过。
+- 详情页会校验当前浏览器 URL 是否仍为目标电影，避免超时后误解析上一部电影页面。
+- 详情页字段采用“解析到再更新”的策略，例如只有成功解析到 `duration`、`genres`、`imdb_id` 时才写入对应字段。
+- 详情页多次失败后会写入 `data/csv/failed_detail_movies.csv`，便于后续只补爬失败电影。
 
 核心文件：
 
@@ -79,12 +82,12 @@ requests_version/image_downloader.py
   - `insert_comment` 使用 `ON DUPLICATE KEY UPDATE` 实现幂等插入，重复爬取不产生冗余记录
   - `DBConnector` 支持连接断开自动重连（`ping` + 自动 `reconnect`）
   - `created_at` 表示首次插入时间，重复爬取不会改变；判断记录是否被更新应查看 `updated_at`
-  - 已有电影记录重复时，当前主要更新 `rating`、`rating_count`、`director`、`actors`、`summary`、`release_year`、`duration`、`genres`、`imdb_rating`、`poster_path`
+  - 已有电影记录重复时，当前主要更新 `rating`、`rating_count`、`director`、`actors`、`summary`、`release_year`、`duration`、`genres`、`imdb_id`、`poster_path`
   - `title_cn`、`title_en`、`detail_url`、`created_at` 不会在重复写入时主动覆盖更新
   - 如果本次爬到的是空字符串或 `NULL`，数据库会尽量保留旧值，避免把已有有效数据覆盖为空
 - 数据库迁移：
   - `database/migrate.py` 幂等迁移脚本，可安全重复执行
-  - 自动添加 `updated_at` 字段、清理重复评论、建立唯一索引
+  - 自动补齐旧库缺失的 `imdb_id`、`poster_path`、`updated_at` 字段，清理重复评论并建立唯一索引
 - CSV 备份：
   - `data/csv/movies_requests.csv`
   - `data/csv/comments_requests.csv`
@@ -175,6 +178,11 @@ analysis/visualizer.py
   - AutoThrottle 自适应限速，最大延迟 60 秒
   - 触发反爬或异常状态码后进行重试
   - 会话预热（启动时访问首页获取 cookies）
+- Selenium 详情页稳定性控制：
+  - `DETAIL_MAX_RETRIES` 控制详情页最大重试次数
+  - `COMMENT_MAX_RETRIES` 控制评论页最大重试次数
+  - `BLOCK_COOLDOWN_MIN` / `BLOCK_COOLDOWN_MAX` 控制访问限制后的冷却等待区间
+  - 推荐在反爬频繁时调大请求延迟，并将 `HEADLESS_MODE=False` 方便观察页面状态
 - 代理池：
   - 复制 `proxies.example.txt` 为 `proxies.txt`
   - 每行填写一个代理
@@ -186,7 +194,7 @@ douban_movie_analyzer/
 ├── analysis/                  # 数据清洗、统计分析、情感分析、可视化
 ├── data/                      # CSV、JSON、图表、海报输出
 ├── database/                  # MySQL连接、建表SQL、迁移脚本
-│   ├── schema.sql             # 建表语句（含 updated_at 字段和评论唯一索引）
+│   ├── schema.sql             # 建表语句（含 imdb_id、poster_path、updated_at 和评论唯一索引）
 │   ├── db_connector.py        # 数据库操作（防覆盖、幂等插入、自动重连）
 │   └── migrate.py             # 数据库迁移脚本（幂等执行）
 ├── docs/                      # 说明文档与版本对比
@@ -217,13 +225,25 @@ pip install -r requirements.txt
 mysql -u root -p < database/schema.sql
 ```
 
-已有数据库需执行迁移（添加 `updated_at` 字段和评论唯一索引）：
+已有数据库需执行迁移（补齐旧字段、添加 `updated_at` 字段和评论唯一索引）：
 
 ```bash
 python database/migrate.py
 ```
 
 如不配置 MySQL，项目会自动使用 CSV 数据进行分析。
+
+可选 `.env` 配置示例：
+
+```env
+REQUEST_DELAY_MIN=8
+REQUEST_DELAY_MAX=15
+DETAIL_MAX_RETRIES=3
+COMMENT_MAX_RETRIES=2
+BLOCK_COOLDOWN_MIN=180
+BLOCK_COOLDOWN_MAX=300
+HEADLESS_MODE=False
+```
 
 ## 运行方式
 
@@ -266,6 +286,16 @@ python main.py --scrapy
 ```bash
 python main.py --analysis
 ```
+
+### 将已有 CSV 同步到数据库
+
+适用于已经有 `movies_requests.csv` / `comments_requests.csv`，但数据库字段刚迁移、数据库数据落后于 CSV，或者不想重新爬取时：
+
+```bash
+python main.py --sync-csv-to-db
+```
+
+该命令会读取 `data/csv/movies_requests.csv` 和 `data/csv/comments_requests.csv`，将已有电影和评论数据写入 MySQL。同步评论时会跳过 `movie_url`、`reviewer` 或 `content` 为空的无效评论，避免单条脏数据中断整体同步。
 
 ### 运行采集与分析
 
@@ -343,7 +373,7 @@ data/posters/
 `movies_requests.csv` 当前字段包括：
 
 ```text
-rank,title_cn,title_en,rating,rating_count,director,actors,summary,detail_url,release_year,duration,genres,imdb_rating,poster_path
+rank,title_cn,title_en,rating,rating_count,director,actors,summary,detail_url,release_year,duration,genres,imdb_id,poster_path
 ```
 
 `comments_requests.csv` 当前字段包括：
@@ -356,14 +386,15 @@ movie_url,reviewer,rating,content,comment_time,sentiment
 
 - `rank`、`title_cn`、`title_en`、`rating`、`rating_count`、`director`、`actors`、`summary`、`detail_url` 主要来自 Top250 列表页。
 - `release_year`、`genres` 既可能来自列表页，也可能在详情页成功解析后被更完整的结果更新。
-- `duration`、`imdb_rating` 主要来自详情页，详情页解析失败时可能为空。
-- `poster_path` 只有下载海报后才会有值。
+- `duration`、`imdb_id` 主要来自详情页，详情页解析失败时可能为空。
+- `poster_path` 默认保存海报网络 URL；如果开启本地下载，也会继续尝试下载海报文件。
+- `failed_detail_movies.csv` 记录详情页多次重试后仍失败的电影，可用于后续补爬。
 - `comment_time` 属于短评数据，保存在评论 CSV 和数据库 `comments` 表中。
 
 ### CSV 与数据库不一致时如何判断
 
 - 如果 CSV 里字段为空，通常说明本次爬虫没有成功解析到该字段。
-- 如果 CSV 里有值但数据库没有变化，通常需要检查数据库的重复更新策略。
+- 如果 CSV 里有值但数据库没有变化，通常需要先执行 `python database/migrate.py` 补齐旧库字段，再运行 `python main.py --sync-csv-to-db` 回灌 CSV 数据。
 - `movies.created_at` 是首次创建时间，不代表最新爬取时间；应查看 `movies.updated_at`。
 - `comments.comment_time` 是评论发布时间，不会出现在 `movies` 表。
 - 分析流程优先读取 MySQL。如果数据库有旧数据且不为空，即使 CSV 更新了，`python main.py --analysis` 也会优先使用数据库数据。
@@ -372,11 +403,11 @@ movie_url,reviewer,rating,content,comment_time,sentiment
 
 - `summary` 为空：部分电影列表页本身没有简介短句。
 - `duration` 为空：详情页没有解析成功，或豆瓣页面结构/访问状态导致字段缺失。
-- `imdb_rating` 为空：详情页未提供 IMDb 评分，或当前解析规则未匹配到评分文本。
-- `poster_path` 为空：未开启海报下载，或海报元素未解析成功。
+- `imdb_id` 为空：详情页未解析成功，页面中未出现 IMDb 编号，或被访问限制页替代。
+- `poster_path` 为空：海报元素未解析成功，或详情页访问受限导致未进入有效页面。
 - `genres` 分隔不统一：列表页可能出现空格分隔，详情页成功解析后通常是 `/` 分隔；如果详情页无效，会保留列表页已有类型信息。
 
 ## 完成说明
 
-- 本人完成 `requests + BeautifulSoup` 列表页爬虫、Selenium 详情页与短评爬取、海报下载、反爬策略、代理池、MySQL/CSV/JSON 存储。
+- 本人完成 `requests + BeautifulSoup` 列表页爬虫、Selenium 详情页与短评爬取、海报 URL 解析与下载、冷却重试、失败清单、反爬策略、代理池、MySQL/CSV/JSON 存储。
 - 本人完成 Scrapy 框架重构、数据清洗、统计分析、SnowNLP 情感分析、可视化图表生成和项目文档整理。

@@ -3,8 +3,23 @@ import csv
 import os
 import tempfile
 from database.db_connector import DBConnector
-from config import CSV_DIR, JSON_DIR
+from config import CSV_DIR, JSON_DIR, SCRAPY_MIN_MOVIES_TO_OVERWRITE
 from utils.logger import logger
+
+def partial_output_path(file_path):
+    root, ext = os.path.splitext(file_path)
+    return f"{root}_partial{ext}"
+
+def replace_or_remove_output(tmp_path, target_path, count, use_official, label):
+    if count <= 0:
+        os.remove(tmp_path)
+        return
+    output_path = target_path if use_official else partial_output_path(target_path)
+    os.replace(tmp_path, output_path)
+    if use_official:
+        logger.info(f"{label}已更新: {count} 条")
+    else:
+        logger.warning(f"{label}仅保存为partial文件，未覆盖正式文件: {output_path} ({count} 条)")
 
 class MySQLPipeline:
     def open_spider(self, spider):
@@ -68,18 +83,9 @@ class JsonPipeline:
             self.movies_tmp.close()
             self.comments_tmp.close()
 
-        # 有数据才替换原文件，无数据时保留原文件不变
-        if self.movie_count > 0:
-            os.replace(self.movies_tmp.name, self.movies_path)
-            logger.info(f"JSON 电影文件已更新: {self.movie_count} 条")
-        else:
-            os.remove(self.movies_tmp.name)
-
-        if self.comment_count > 0:
-            os.replace(self.comments_tmp.name, self.comments_path)
-            logger.info(f"JSON 评论文件已更新: {self.comment_count} 条")
-        else:
-            os.remove(self.comments_tmp.name)
+        use_official = self.movie_count >= SCRAPY_MIN_MOVIES_TO_OVERWRITE
+        replace_or_remove_output(self.movies_tmp.name, self.movies_path, self.movie_count, use_official, "JSON 电影文件")
+        replace_or_remove_output(self.comments_tmp.name, self.comments_path, self.comment_count, use_official, "JSON 评论文件")
 
     def process_item(self, item, spider):
         if item.__class__.__name__ == 'MovieItem':
@@ -118,17 +124,9 @@ class CsvPipeline:
         except Exception:
             pass
 
-        if self.movie_count > 0:
-            os.replace(self.movies_tmp.name, self.movies_path)
-            logger.info(f"CSV 电影文件已更新: {self.movie_count} 条")
-        else:
-            os.remove(self.movies_tmp.name)
-
-        if self.comment_count > 0:
-            os.replace(self.comments_tmp.name, self.comments_path)
-            logger.info(f"CSV 评论文件已更新: {self.comment_count} 条")
-        else:
-            os.remove(self.comments_tmp.name)
+        use_official = self.movie_count >= SCRAPY_MIN_MOVIES_TO_OVERWRITE
+        replace_or_remove_output(self.movies_tmp.name, self.movies_path, self.movie_count, use_official, "CSV 电影文件")
+        replace_or_remove_output(self.comments_tmp.name, self.comments_path, self.comment_count, use_official, "CSV 评论文件")
 
     def process_item(self, item, spider):
         if item.__class__.__name__ == 'MovieItem':

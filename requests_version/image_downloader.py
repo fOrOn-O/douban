@@ -15,6 +15,9 @@ class PosterDownloader(AntiCrawlStrategy):
         super().__init__()
         self.driver = driver
 
+    def has_value(self, value):
+        return value is not None and str(value).strip() and str(value).strip().lower() != 'nan'
+
     def get_poster_url(self, detail_url):
         try:
             self.driver.get(detail_url)
@@ -98,7 +101,10 @@ class PosterDownloader(AntiCrawlStrategy):
             logger.info("跳过海报下载，仅获取海报URL")
             for movie in tqdm(movies, desc="获取海报URL"):
                 poster_url = self.get_poster_url(movie['detail_url'])
-                movie['poster_path'] = poster_url
+                if poster_url:
+                    movie['poster_path'] = poster_url
+                elif not self.has_value(movie.get('poster_path')):
+                    movie['poster_path'] = None
             return movies
 
         logger.info("开始下载电影海报")
@@ -109,7 +115,8 @@ class PosterDownloader(AntiCrawlStrategy):
                 movie['poster_path'] = poster_url
                 self.download_poster(poster_url, movie['title_cn'])
             else:
-                movie['poster_path'] = None
+                if not self.has_value(movie.get('poster_path')):
+                    movie['poster_path'] = None
                 logger.warning(f"未找到海报: {movie['title_cn']}")
 
         logger.info("海报下载完成")

@@ -6,8 +6,9 @@ from config import CSV_DIR
 from utils.logger import logger
 
 class DataCleaner:
-    def __init__(self):
+    def __init__(self, data_source='auto'):
         self.db = None
+        self.data_source = data_source
     
     def load_data_from_db(self):
         logger.info("从数据库加载数据")
@@ -53,9 +54,19 @@ class DataCleaner:
         return movies_df, comments_df
     
     def load_data(self):
+        if self.data_source == 'csv':
+            logger.info("已指定数据分析来源: CSV")
+            return self.load_data_from_csv()
+        if self.data_source == 'db':
+            logger.info("已指定数据分析来源: MySQL")
+            movies_df, comments_df = self.load_data_from_db()
+            if len(movies_df) == 0:
+                raise ValueError("数据库电影数据为空")
+            return movies_df, comments_df
         try:
             movies_df, comments_df = self.load_data_from_db()
             if len(movies_df) > 0:
+                logger.info("自动选择数据分析来源: MySQL")
                 return movies_df, comments_df
             logger.warning("数据库电影数据为空，改用CSV文件")
         except Exception as e:

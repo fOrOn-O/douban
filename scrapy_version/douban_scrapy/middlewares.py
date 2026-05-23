@@ -15,6 +15,35 @@ class RandomUserAgentMiddleware(UserAgentMiddleware):
             request.headers['Referer'] = 'https://movie.douban.com/'
         return None
 
+class DetailDelayMiddleware:
+    def __init__(self, detail_delay_min=15, detail_delay_max=30, comment_delay_min=8, comment_delay_max=15):
+        self.detail_delay_min = detail_delay_min
+        self.detail_delay_max = detail_delay_max
+        self.comment_delay_min = comment_delay_min
+        self.comment_delay_max = comment_delay_max
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(
+            detail_delay_min=crawler.settings.getfloat('DETAIL_REQUEST_DELAY_MIN', 15),
+            detail_delay_max=crawler.settings.getfloat('DETAIL_REQUEST_DELAY_MAX', 30),
+            comment_delay_min=crawler.settings.getfloat('COMMENT_REQUEST_DELAY_MIN', 8),
+            comment_delay_max=crawler.settings.getfloat('COMMENT_REQUEST_DELAY_MAX', 15),
+        )
+
+    def process_request(self, request, spider):
+        if request.meta.get('is_detail_request'):
+            delay = random.uniform(self.detail_delay_min, self.detail_delay_max)
+            logger.debug(f"详情页请求延迟 {delay:.1f}s: {request.url}")
+            return task.deferLater(reactor, delay, lambda: None)
+
+        if request.meta.get('is_comment_request'):
+            delay = random.uniform(self.comment_delay_min, self.comment_delay_max)
+            logger.debug(f"评论页请求延迟 {delay:.1f}s: {request.url}")
+            return task.deferLater(reactor, delay, lambda: None)
+
+        return None
+
 class RetryMiddleware:
     def __init__(self, max_retry_times=3, challenge_max_retry_times=1, backoff_base=60):
         self.max_retry_times = max_retry_times
@@ -51,6 +80,8 @@ class RetryMiddleware:
                 return dfd
 
             logger.error(f"豆瓣访问限制重试耗尽，放弃原始请求: {original_url}")
+            if request.meta.get('return_block_response'):
+                return response
             raise IgnoreRequest(f"豆瓣访问限制重试耗尽: {original_url}")
 
         if response.status in [403, 429, 500, 502, 503, 504]:
@@ -100,6 +131,7 @@ class SessionWarmupMiddleware:
 
     def __init__(self):
         self._warmed_up = False
+        self._cookies = {}
 
     @classmethod
     def from_crawler(cls, crawler):
@@ -116,15 +148,15 @@ class SessionWarmupMiddleware:
                 )
                 resp = urllib.request.urlopen(req, timeout=15)
                 # 从响应头中提取 cookies
-                cookies = {}
                 for header in resp.headers.get_all('Set-Cookie') or []:
                     parts = header.split(';')[0].split('=', 1)
                     if len(parts) == 2:
-                        cookies[parts[0].strip()] = parts[1].strip()
-                for key, value in cookies.items():
-                    request.cookies[key] = value
-                logger.info(f"会话预热完成，获取 {len(cookies)} 个 cookies")
+                        self._cookies[parts[0].strip()] = parts[1].strip()
+                logger.info(f"会话预热完成，获取 {len(self._cookies)} 个 cookies")
             except Exception as e:
                 logger.warning(f"会话预热失败: {e}")
             self._warmed_up = True
+        if isinstance(request.cookies, dict):
+            for key, value in self._cookies.items():
+                request.cookies.setdefault(key, value)
         return None
