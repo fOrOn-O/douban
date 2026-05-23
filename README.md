@@ -409,5 +409,5 @@ movie_url,reviewer,rating,content,comment_time,sentiment
 
 ## 完成说明
 
-- 本人完成 `requests + BeautifulSoup` 列表页爬虫、Selenium 详情页与短评爬取、海报 URL 解析与下载、冷却重试、失败清单、反爬策略、代理池、MySQL/CSV/JSON 存储。
-- 本人完成 Scrapy 框架重构、数据清洗、统计分析、SnowNLP 情感分析、可视化图表生成和项目文档整理。
+- 完成 `requests + BeautifulSoup` 列表页爬虫、Selenium 详情页与短评爬取、海报下载、反爬策略、代理池、MySQL/CSV/JSON 存储。
+- 完成 Scrapy 框架重构、数据清洗、统计分析、SnowNLP 情感分析、可视化图表生成和项目文档整理。
